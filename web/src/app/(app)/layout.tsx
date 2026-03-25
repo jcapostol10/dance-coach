@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Separator } from "@/components/ui/separator";
+import UserNav from "@/components/user-nav";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -30,6 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               Dashboard
             </Link>
+            <UserNav />
           </nav>
         </div>
       </header>
