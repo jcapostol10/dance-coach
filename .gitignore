@@ -10,3 +10,4 @@ dist/
 temporary screenshots/
 
 .vercel
+.env*.local

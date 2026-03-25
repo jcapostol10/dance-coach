@@ -1,8 +1,10 @@
-"""Beat detection using Essentia.
+"""Beat detection using librosa.
 
 Extracts BPM and beat positions from audio files.
-Requires: pip install essentia
+Requires: pip install librosa
 """
+
+import librosa
 
 
 def detect_beats(audio_path: str) -> tuple[float, list[float]]:
@@ -12,40 +14,11 @@ def detect_beats(audio_path: str) -> tuple[float, list[float]]:
         Tuple of (bpm, beat_positions) where beat_positions is a list of
         timestamps in seconds where beats occur.
     """
-    try:
-        import essentia.standard as es
-    except ImportError:
-        # Fallback: return estimated beats if essentia not installed
-        return _fallback_beat_detection(audio_path)
+    y, sr = librosa.load(audio_path, sr=22050, mono=True)
 
-    audio = es.MonoLoader(filename=audio_path, sampleRate=44100)()
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
 
-    rhythm_extractor = es.RhythmExtractor2013(method="multifeature")
-    bpm, beats, beats_confidence, _, _ = rhythm_extractor(audio)
+    bpm = float(tempo) if not hasattr(tempo, '__len__') else float(tempo[0])
 
-    return float(bpm), [float(b) for b in beats]
-
-
-def _fallback_beat_detection(audio_path: str) -> tuple[float, list[float]]:
-    """Simple fallback when essentia is not available.
-
-    Uses a fixed BPM estimate and generates evenly-spaced beats.
-    This is only for development/testing.
-    """
-    import wave
-
-    with wave.open(audio_path, "r") as wf:
-        frames = wf.getnframes()
-        rate = wf.getframerate()
-        duration = frames / float(rate)
-
-    # Default to 120 BPM for fallback
-    bpm = 120.0
-    beat_interval = 60.0 / bpm
-    beats = []
-    t = beat_interval
-    while t < duration:
-        beats.append(t)
-        t += beat_interval
-
-    return bpm, beats
+    return bpm, [float(t) for t in beat_times]

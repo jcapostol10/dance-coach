@@ -4,6 +4,6 @@ python-multipart==0.0.22
 aiofiles==25.1.0
 mediapipe>=0.10.0
 opencv-python-headless>=4.10.0
-essentia>=2.1b6.dev1177
+librosa>=0.10.0
 google-genai>=1.0.0
 numpy>=2.0.0
