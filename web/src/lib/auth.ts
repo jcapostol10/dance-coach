@@ -1,16 +1,24 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 
-const ADMIN_USERS: Record<string, { password: string; name: string; role: string }> = {
+const ADMIN_EMAILS = new Set([
+  "josecarlo.apostol@gmail.com",
+]);
+
+const ADMIN_PASSWORDS: Record<string, { password: string; name: string }> = {
   "josecarlo.apostol@gmail.com": {
     password: process.env.ADMIN_PASSWORD || "dancecoach2025",
     name: "Jose Carlo",
-    role: "admin",
   },
 };
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
     Credentials({
       name: "Email",
       credentials: {
@@ -23,22 +31,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (!email || !password) return null;
 
-        const user = ADMIN_USERS[email.toLowerCase()];
-        if (!user || user.password !== password) return null;
+        const entry = ADMIN_PASSWORDS[email.toLowerCase()];
+        if (!entry || entry.password !== password) return null;
 
         return {
           id: email,
           email,
-          name: user.name,
-          role: user.role,
+          name: entry.name,
         };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.role = (user as { role?: string }).role || "user";
+    jwt({ token, user, account }) {
+      if (user?.email) {
+        token.role = ADMIN_EMAILS.has(user.email.toLowerCase()) ? "admin" : "user";
       }
       return token;
     },

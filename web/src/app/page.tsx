@@ -29,9 +29,9 @@ export default function Home() {
               Browse Lessons
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button size="lg" variant="outline" className="w-full">
-              My Dashboard
+              Sign In
             </Button>
           </Link>
         </div>
