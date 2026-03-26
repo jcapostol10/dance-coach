@@ -1,41 +1,35 @@
-import { NextResponse } from "next/server";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import { getUploadUrl, videoKey, getDownloadUrl } from "@/lib/storage";
 
 /**
  * POST /api/upload
  *
- * Phase 1: Client uploads directly to Vercel Blob (no CORS, no size limit).
- * Phase 2: Client calls /api/upload/finalize to copy Blob → R2.
+ * Returns a presigned URL for the client to upload a video directly to R2.
+ * Body: { filename: string, contentType: string, lessonId?: string }
  */
-export async function POST(req: Request) {
-  const body = (await req.json()) as HandleUploadBody;
+export async function POST(req: NextRequest) {
+  const { filename, contentType, lessonId } = await req.json();
 
-  try {
-    const jsonResponse = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async () => {
-        return {
-          allowedContentTypes: [
-            "video/mp4",
-            "video/quicktime",
-            "video/webm",
-            "video/x-msvideo",
-            "video/x-matroska",
-          ],
-          maximumSizeInBytes: 500 * 1024 * 1024,
-        };
-      },
-      onUploadCompleted: async () => {
-        // No-op — finalization happens via /api/upload/finalize
-      },
-    });
-
-    return NextResponse.json(jsonResponse);
-  } catch (error) {
+  if (!filename || !contentType) {
     return NextResponse.json(
-      { error: (error as Error).message },
+      { error: "filename and contentType are required" },
       { status: 400 },
     );
   }
+
+  if (!contentType.startsWith("video/")) {
+    return NextResponse.json(
+      { error: "Only video files are accepted" },
+      { status: 400 },
+    );
+  }
+
+  const id = lessonId || randomUUID();
+  const key = videoKey(id, filename);
+
+  const uploadUrl = await getUploadUrl(key, contentType);
+  const publicUrl = await getDownloadUrl(key);
+
+  return NextResponse.json({ uploadUrl, key, publicUrl, lessonId: id });
 }
