@@ -4,6 +4,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!;
@@ -79,8 +80,8 @@ export async function getDownloadUrl(
 }
 
 /**
- * Copy a file from a URL (e.g. Vercel Blob) into R2.
- * Used as part of the upload pipeline: Blob (temp) → R2 (permanent).
+ * Copy a file from a URL (e.g. Vercel Blob) into R2 using streaming.
+ * Uses multipart upload for large files to avoid buffering in memory.
  */
 export async function copyUrlToR2(
   sourceUrl: string,
@@ -89,8 +90,23 @@ export async function copyUrlToR2(
 ): Promise<void> {
   const res = await fetch(sourceUrl);
   if (!res.ok) throw new Error(`Failed to fetch from source: ${res.status}`);
-  const buffer = Buffer.from(await res.arrayBuffer());
-  await uploadObject(key, buffer, contentType);
+
+  const stream = res.body;
+  if (!stream) throw new Error("No body in source response");
+
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      Body: stream,
+      ContentType: contentType,
+    },
+    queueSize: 4,
+    partSize: 5 * 1024 * 1024, // 5MB parts
+  });
+
+  await upload.done();
 }
 
 /**

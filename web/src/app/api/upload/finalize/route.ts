@@ -3,6 +3,9 @@ import { del } from "@vercel/blob";
 import { copyUrlToR2, videoKey, getDownloadUrl } from "@/lib/storage";
 import { randomUUID } from "crypto";
 
+// Allow up to 60s for large video transfers (Hobby max)
+export const maxDuration = 60;
+
 /**
  * POST /api/upload/finalize
  *
@@ -21,17 +24,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const lessonId = randomUUID();
-  const key = videoKey(lessonId, filename);
+  try {
+    const lessonId = randomUUID();
+    const key = videoKey(lessonId, filename);
 
-  // Copy from Vercel Blob → R2
-  await copyUrlToR2(blobUrl, key, contentType || "video/mp4");
+    // Stream from Vercel Blob → R2 (multipart upload)
+    await copyUrlToR2(blobUrl, key, contentType || "video/mp4");
 
-  // Delete temporary Blob copy
-  await del(blobUrl).catch(() => {});
+    // Delete temporary Blob copy
+    await del(blobUrl).catch(() => {});
 
-  // Get the R2 URL for playback (zero egress)
-  const publicUrl = await getDownloadUrl(key);
+    // Get the R2 URL for playback (zero egress)
+    const publicUrl = await getDownloadUrl(key);
 
-  return NextResponse.json({ publicUrl, lessonId });
+    return NextResponse.json({ publicUrl, lessonId });
+  } catch (err) {
+    console.error("Finalize error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Transfer failed" },
+      { status: 500 },
+    );
+  }
 }
