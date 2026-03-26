@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const base64Video = Buffer.from(videoBuffer).toString("base64");
 
     // Analyze with Gemini Flash (native video understanding)
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const result = await model.generateContent([
       { text: ANALYSIS_PROMPT },
