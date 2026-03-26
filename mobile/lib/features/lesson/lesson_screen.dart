@@ -152,7 +152,9 @@ class _LessonScreenState extends State<LessonScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: AspectRatio(
-                  aspectRatio: 16 / 9,
+                  aspectRatio: _videoController != null && _videoController!.value.isInitialized
+                      ? _videoController!.value.aspectRatio
+                      : 16 / 9,
                   child: _videoController != null && _videoController!.value.isInitialized
                       ? Stack(
                           alignment: Alignment.center,
