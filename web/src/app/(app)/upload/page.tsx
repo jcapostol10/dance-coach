@@ -73,18 +73,28 @@ export default function UploadPage() {
       setProgress("Getting upload URL...");
       setError("");
 
-      // Step 1: Upload video via server proxy to R2
-      setProgress(`Uploading ${(file.size / 1024 / 1024).toFixed(1)} MB...`);
-      const formData = new FormData();
-      formData.append("file", file);
-
+      // Step 1: Get presigned upload URL
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type,
+        }),
       });
 
-      if (!uploadRes.ok) throw new Error("Failed to upload video");
-      const { publicUrl, lessonId } = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error("Failed to get upload URL");
+      const { uploadUrl, publicUrl, lessonId } = await uploadRes.json();
+
+      // Step 2: Upload video directly to R2
+      setProgress(`Uploading ${(file.size / 1024 / 1024).toFixed(1)} MB...`);
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+
+      if (!putRes.ok) throw new Error("Failed to upload video to storage");
 
       // Step 3: Create lesson record
       setProgress("Creating lesson record...");
