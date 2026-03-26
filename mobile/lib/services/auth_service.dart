@@ -4,7 +4,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 class AuthService extends ChangeNotifier {
   static const _adminEmails = {'josecarlo.apostol@gmail.com'};
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email'],
+    serverClientId:
+        '8768947290-7e10lvi2kl23bbipk5qmi32f2aefk3bo.apps.googleusercontent.com',
+  );
 
   GoogleSignInAccount? _user;
   bool _isLoading = false;
