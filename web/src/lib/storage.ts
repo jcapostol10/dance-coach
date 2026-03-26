@@ -19,6 +19,8 @@ const s3 = new S3Client({
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
   },
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 /**
@@ -35,7 +37,10 @@ export async function getUploadUrl(
     Key: key,
     ContentType: contentType,
   });
-  return getSignedUrl(s3, command, { expiresIn });
+  return getSignedUrl(s3, command, {
+    expiresIn,
+    unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
+  });
 }
 
 /**
