@@ -22,6 +22,12 @@ dependencies:
   # Pose estimation
   google_mlkit_pose_detection: ^0.12.0
 
+  # Auth
+  google_sign_in: ^6.2.1
+
+  # File picker
+  image_picker: ^1.1.2
+
   # Networking
   http: ^1.2.2
 
