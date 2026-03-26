@@ -39,6 +39,24 @@ export async function getUploadUrl(
 }
 
 /**
+ * Upload a file directly to R2 from the server (avoids CORS issues).
+ */
+export async function uploadObject(
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
+
+/**
  * Generate a presigned URL for reading a private object.
  */
 export async function getDownloadUrl(
