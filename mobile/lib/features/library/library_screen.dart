@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 import '../../models/lesson.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 
-// Placeholder lessons matching the web app
-final _placeholderLessons = [
-  Lesson(id: '1', title: 'Basic Hip-Hop Groove', description: 'Learn the fundamental hip-hop bounce and groove.', style: 'Hip-Hop', difficulty: 'Beginner', duration: 45, bpm: 95, isCurated: true),
-  Lesson(id: '2', title: 'Salsa Basics — Cross Body Lead', description: 'Master the basic salsa step and cross body lead.', style: 'Salsa', difficulty: 'Beginner', duration: 60, bpm: 180, isCurated: true),
-  Lesson(id: '3', title: 'Contemporary Flow Sequence', description: 'A flowing contemporary combination focusing on fluidity.', style: 'Contemporary', difficulty: 'Intermediate', duration: 90, bpm: 72, isCurated: true),
-  Lesson(id: '4', title: 'K-Pop Choreography — Intro', description: 'Learn the opening sequence of a popular K-Pop routine.', style: 'K-Pop', difficulty: 'Intermediate', duration: 120, bpm: 128, isCurated: true),
-  Lesson(id: '5', title: 'Breaking — Toprock Basics', description: 'Essential toprock steps for breaking.', style: 'Breaking', difficulty: 'Beginner', duration: 55, bpm: 110, isCurated: true),
-  Lesson(id: '6', title: 'House Dance Foundations', description: 'Core house dance steps: jack, stomp, and lofting.', style: 'House', difficulty: 'Beginner', duration: 70, bpm: 124, isCurated: true),
-];
-
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  late Future<List<Lesson>> _lessonsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _lessonsFuture = ApiService().getLessons();
+  }
+
+  void _refresh() {
+    setState(() {
+      _lessonsFuture = ApiService().getLessons();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,18 +37,68 @@ class LibraryScreen extends StatelessWidget {
           ],
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('Lesson Library', style: Theme.of(context).textTheme.headlineLarge),
-          const SizedBox(height: 8),
-          Text(
-            'Choose a dance to learn. AI will break it down step by step.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 20),
-          ..._placeholderLessons.map((lesson) => _LessonCard(lesson: lesson)),
-        ],
+      body: FutureBuilder<List<Lesson>>(
+        future: _lessonsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                  const SizedBox(height: 12),
+                  Text('Failed to load lessons', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text('${snapshot.error}', style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 16),
+                  OutlinedButton(onPressed: _refresh, child: const Text('Retry')),
+                ],
+              ),
+            );
+          }
+
+          final lessons = snapshot.data!;
+
+          if (lessons.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.library_music_outlined, size: 48, color: Color(0xFF555577)),
+                  const SizedBox(height: 12),
+                  Text('No lessons yet', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text('Upload a dance video on the web app to get started.', style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            );
+          }
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              _refresh();
+              // Wait for the future to complete
+              await _lessonsFuture;
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text('Lesson Library', style: Theme.of(context).textTheme.headlineLarge),
+                const SizedBox(height: 8),
+                Text(
+                  'Choose a dance to learn. AI will break it down step by step.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                ...lessons.map((lesson) => _LessonCard(lesson: lesson)),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -70,7 +130,9 @@ class _LessonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final diffColor = AppTheme.difficultyColors[lesson.difficulty] ?? Colors.grey;
+    final diffColor = lesson.difficulty != null
+        ? (AppTheme.difficultyColors[lesson.difficulty] ?? Colors.grey)
+        : Colors.grey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -81,19 +143,27 @@ class _LessonCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Thumbnail placeholder
+              // Thumbnail
               Container(
                 height: 140,
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1E2E),
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  image: lesson.thumbnailUrl != null
+                      ? DecorationImage(
+                          image: NetworkImage(lesson.thumbnailUrl!),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
                 ),
-                child: Center(
-                  child: Text(
-                    lesson.title.split(' ').take(2).join(' '),
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w300, color: Color(0xFF555577)),
-                  ),
-                ),
+                child: lesson.thumbnailUrl == null
+                    ? Center(
+                        child: Text(
+                          lesson.title.split(' ').take(2).join(' '),
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w300, color: Color(0xFF555577)),
+                        ),
+                      )
+                    : null,
               ),
               Padding(
                 padding: const EdgeInsets.all(14),
@@ -103,16 +173,27 @@ class _LessonCard extends StatelessWidget {
                     // Badges
                     Row(
                       children: [
-                        _Badge(label: lesson.difficulty, color: diffColor),
-                        const SizedBox(width: 8),
-                        _Badge(label: lesson.style, color: Colors.white70),
+                        if (lesson.difficulty != null)
+                          _Badge(label: lesson.difficulty!, color: diffColor),
+                        if (lesson.difficulty != null && lesson.style != null)
+                          const SizedBox(width: 8),
+                        if (lesson.style != null)
+                          _Badge(label: lesson.style!, color: Colors.white70),
+                        if (!lesson.isAnalyzed) ...[
+                          const SizedBox(width: 8),
+                          _Badge(label: 'Not analyzed', color: Colors.orange),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 10),
                     Text(lesson.title, style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     Text(
-                      '${lesson.durationFormatted}  ·  ${lesson.bpm} BPM  ·  ${lesson.isCurated ? "Curated" : "User"}',
+                      [
+                        lesson.durationFormatted,
+                        if (lesson.bpm != null) '${lesson.bpm!.round()} BPM',
+                        lesson.isCurated ? 'Curated' : 'User',
+                      ].join('  ·  '),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../../models/lesson.dart' as models;
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
-
-// Placeholder steps matching the web app
-final _placeholderSteps = [
-  models.Step(id: 1, name: 'Starting Position', description: 'Stand with feet shoulder-width apart, knees slightly bent. Arms relaxed at your sides. Weight centered between both feet.', startBeat: 1, endBeat: 4, startTime: 0.0, endTime: 1.6),
-  models.Step(id: 2, name: 'Rock Step', description: 'Shift weight to right foot, then left. Add a subtle bounce on each shift. Keep your core engaged and shoulders loose.', startBeat: 5, endBeat: 8, startTime: 1.6, endTime: 3.2),
-  models.Step(id: 3, name: 'Side Step with Arms', description: 'Step right foot to the side while bringing both arms up to shoulder height. Bring left foot to meet right. Arms swing naturally.', startBeat: 9, endBeat: 12, startTime: 3.2, endTime: 4.8),
-  models.Step(id: 4, name: 'Body Roll', description: 'Starting from the chest, create a wave motion through your torso. Knees bend and straighten to complete the roll. Keep it smooth and controlled.', startBeat: 13, endBeat: 16, startTime: 4.8, endTime: 6.4),
-];
 
 class LessonScreen extends StatefulWidget {
   final String lessonId;
@@ -20,185 +14,333 @@ class LessonScreen extends StatefulWidget {
 }
 
 class _LessonScreenState extends State<LessonScreen> {
+  late Future<models.Lesson> _lessonFuture;
   int _currentStep = 0;
   double _speed = 1.0;
+  VideoPlayerController? _videoController;
+  bool _deleting = false;
 
   @override
-  Widget build(BuildContext context) {
-    final step = _placeholderSteps[_currentStep];
+  void initState() {
+    super.initState();
+    _lessonFuture = ApiService().getLesson(widget.lessonId);
+    _lessonFuture.then((lesson) {
+      if (lesson.videoUrl != null && lesson.videoUrl!.isNotEmpty) {
+        _initVideo(lesson.videoUrl!);
+      }
+    });
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Basic Hip-Hop Groove'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Lesson header
-          Row(
-            children: [
-              _Badge(label: 'Beginner', color: AppTheme.difficultyColors['Beginner']!),
-              const SizedBox(width: 8),
-              _Badge(label: 'Hip-Hop', color: Colors.white70),
-              const SizedBox(width: 8),
-              Text('95 BPM', style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-          const SizedBox(height: 16),
+  void _initVideo(String url) {
+    _videoController = VideoPlayerController.networkUrl(Uri.parse(url))
+      ..initialize().then((_) {
+        if (mounted) setState(() {});
+      });
+  }
 
-          // Video placeholder
-          Container(
-            height: 200,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A1A2E),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.play_circle_outline, size: 48, color: Color(0xFF555577)),
-                  SizedBox(height: 8),
-                  Text('Video player', style: TextStyle(fontSize: 12, color: Color(0xFF555577))),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
 
-          // Step-by-step header with speed control
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Step-by-Step Breakdown', style: Theme.of(context).textTheme.titleLarge),
-              Row(
-                children: [
-                  Text('${_speed}x', style: Theme.of(context).textTheme.bodySmall),
-                  const SizedBox(width: 4),
-                  SizedBox(
-                    width: 80,
-                    child: Slider(
-                      value: _speed,
-                      min: 0.25,
-                      max: 1.0,
-                      divisions: 3,
-                      onChanged: (v) => setState(() => _speed = v),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Step tabs
-          SizedBox(
-            height: 56,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _placeholderSteps.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final s = _placeholderSteps[i];
-                final isActive = i == _currentStep;
-                return GestureDetector(
-                  onTap: () => setState(() => _currentStep = i),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isActive ? Theme.of(context).colorScheme.primary.withAlpha(26) : const Color(0xFF141414),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isActive ? Theme.of(context).colorScheme.primary : const Color(0xFF262626),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Step ${s.id}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isActive ? Colors.white : const Color(0xFFA1A1AA))),
-                        Text(s.name, style: TextStyle(fontSize: 11, color: isActive ? Colors.white70 : const Color(0xFF71717A))),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Current step detail card
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Step ${step.id}: ${step.name}', style: Theme.of(context).textTheme.titleMedium),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF262626)),
-                        ),
-                        child: Text('Beats ${step.startBeat}–${step.endBeat}', style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(step.description, style: Theme.of(context).textTheme.bodyMedium),
-                  const SizedBox(height: 16),
-
-                  // Skeleton overlay placeholder
-                  Container(
-                    height: 180,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A2E),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Center(
-                      child: Text('Pose skeleton overlay will render here', style: TextStyle(fontSize: 12, color: Color(0xFF555577))),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-
-                  // Navigation
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      OutlinedButton(
-                        onPressed: _currentStep > 0 ? () => setState(() => _currentStep--) : null,
-                        child: const Text('← Previous'),
-                      ),
-                      Text('${_currentStep + 1} of ${_placeholderSteps.length}', style: Theme.of(context).textTheme.bodySmall),
-                      OutlinedButton(
-                        onPressed: _currentStep < _placeholderSteps.length - 1 ? () => setState(() => _currentStep++) : null,
-                        child: const Text('Next →'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Practice button
-          ElevatedButton(
-            onPressed: () => Navigator.pushNamed(context, '/practice/${widget.lessonId}'),
-            child: const Text('Practice This Dance'),
+  Future<void> _deleteLesson() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Lesson'),
+        content: const Text('This will permanently delete the lesson, its video, and all analysis data. Continue?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Delete'),
           ),
         ],
       ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await ApiService().deleteLesson(widget.lessonId);
+      if (mounted) {
+        Navigator.pop(context, true); // true signals refresh needed
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _deleting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<models.Lesson>(
+      future: _lessonFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            appBar: AppBar(leading: const BackButton()),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(leading: const BackButton()),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                  const SizedBox(height: 12),
+                  Text('Failed to load lesson', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text('${snapshot.error}', style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final lesson = snapshot.data!;
+        final steps = lesson.steps;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(lesson.title),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => Navigator.pop(context),
+            ),
+            actions: [
+              IconButton(
+                icon: _deleting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.delete_outline, color: Colors.redAccent),
+                onPressed: _deleting ? null : _deleteLesson,
+              ),
+            ],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Lesson header badges
+              Row(
+                children: [
+                  if (lesson.difficulty != null)
+                    _Badge(label: lesson.difficulty!, color: AppTheme.difficultyColors[lesson.difficulty] ?? Colors.grey),
+                  if (lesson.difficulty != null && lesson.style != null)
+                    const SizedBox(width: 8),
+                  if (lesson.style != null)
+                    _Badge(label: lesson.style!, color: Colors.white70),
+                  if (lesson.bpm != null) ...[
+                    const SizedBox(width: 8),
+                    Text('${lesson.bpm!.round()} BPM', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Video player
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: _videoController != null && _videoController!.value.isInitialized
+                      ? Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            VideoPlayer(_videoController!),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _videoController!.value.isPlaying
+                                      ? _videoController!.pause()
+                                      : _videoController!.play();
+                                });
+                              },
+                              child: AnimatedOpacity(
+                                opacity: _videoController!.value.isPlaying ? 0.0 : 1.0,
+                                duration: const Duration(milliseconds: 200),
+                                child: Container(
+                                  color: Colors.black38,
+                                  child: const Center(
+                                    child: Icon(Icons.play_arrow, size: 64, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Container(
+                          color: const Color(0xFF1A1A2E),
+                          child: Center(
+                            child: lesson.videoUrl != null
+                                ? const CircularProgressIndicator()
+                                : const Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.videocam_off, size: 48, color: Color(0xFF555577)),
+                                      SizedBox(height: 8),
+                                      Text('No video available', style: TextStyle(fontSize: 12, color: Color(0xFF555577))),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Steps section
+              if (steps.isNotEmpty) ...[
+                // Step-by-step header with speed control
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Step-by-Step Breakdown', style: Theme.of(context).textTheme.titleLarge),
+                    Row(
+                      children: [
+                        Text('${_speed}x', style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 80,
+                          child: Slider(
+                            value: _speed,
+                            min: 0.25,
+                            max: 1.0,
+                            divisions: 3,
+                            onChanged: (v) => setState(() => _speed = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Step tabs
+                SizedBox(
+                  height: 56,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: steps.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, i) {
+                      final s = steps[i];
+                      final isActive = i == _currentStep;
+                      return GestureDetector(
+                        onTap: () => setState(() => _currentStep = i),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isActive ? Theme.of(context).colorScheme.primary.withAlpha(26) : const Color(0xFF141414),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isActive ? Theme.of(context).colorScheme.primary : const Color(0xFF262626),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Step ${s.id}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isActive ? Colors.white : const Color(0xFFA1A1AA))),
+                              Text(s.name, style: TextStyle(fontSize: 11, color: isActive ? Colors.white70 : const Color(0xFF71717A))),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Current step detail card
+                Builder(builder: (context) {
+                  final step = steps[_currentStep];
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text('Step ${step.id}: ${step.name}', style: Theme.of(context).textTheme.titleMedium),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFF262626)),
+                                ),
+                                child: Text('Beats ${step.startBeat}–${step.endBeat}', style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(step.description, style: Theme.of(context).textTheme.bodyMedium),
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 8),
+
+                          // Navigation
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              OutlinedButton(
+                                onPressed: _currentStep > 0 ? () => setState(() => _currentStep--) : null,
+                                child: const Text('\u2190 Previous'),
+                              ),
+                              Text('${_currentStep + 1} of ${steps.length}', style: Theme.of(context).textTheme.bodySmall),
+                              OutlinedButton(
+                                onPressed: _currentStep < steps.length - 1 ? () => setState(() => _currentStep++) : null,
+                                child: const Text('Next \u2192'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ] else ...[
+                // No steps
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 48),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF262626), style: BorderStyle.solid),
+                  ),
+                  child: Center(
+                    child: Text(
+                      lesson.isAnalyzed
+                          ? 'No steps were detected for this video.'
+                          : "This video hasn't been analyzed yet.",
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+
+              // Practice button
+              ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, '/practice/${widget.lessonId}'),
+                child: const Text('Practice This Dance'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

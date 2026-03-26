@@ -19,11 +19,11 @@ class Step {
 
   factory Step.fromJson(Map<String, dynamic> json) {
     return Step(
-      id: json['id'] as int,
+      id: (json['stepNumber'] ?? json['id']) as int,
       name: json['name'] as String,
       description: json['description'] as String,
-      startBeat: json['startBeat'] as int,
-      endBeat: json['endBeat'] as int,
+      startBeat: (json['startBeat'] as num).toInt(),
+      endBeat: (json['endBeat'] as num).toInt(),
       startTime: (json['startTime'] as num).toDouble(),
       endTime: (json['endTime'] as num).toDouble(),
     );
@@ -33,27 +33,29 @@ class Step {
 class Lesson {
   final String id;
   final String title;
-  final String description;
-  final String style;
-  final String difficulty;
+  final String? description;
+  final String? style;
+  final String? difficulty;
   final String? videoUrl;
   final String? thumbnailUrl;
-  final int duration;
-  final int bpm;
+  final double duration;
+  final double? bpm;
   final bool isCurated;
+  final bool isAnalyzed;
   final List<Step> steps;
 
   Lesson({
     required this.id,
     required this.title,
-    required this.description,
-    required this.style,
-    required this.difficulty,
+    this.description,
+    this.style,
+    this.difficulty,
     this.videoUrl,
     this.thumbnailUrl,
     required this.duration,
-    required this.bpm,
+    this.bpm,
     required this.isCurated,
+    this.isAnalyzed = false,
     this.steps = const [],
   });
 
@@ -61,14 +63,15 @@ class Lesson {
     return Lesson(
       id: json['id'].toString(),
       title: json['title'] as String,
-      description: json['description'] as String,
-      style: json['style'] as String,
-      difficulty: json['difficulty'] as String,
+      description: json['description'] as String?,
+      style: json['style'] as String?,
+      difficulty: json['difficulty'] as String?,
       videoUrl: json['videoUrl'] as String?,
       thumbnailUrl: json['thumbnailUrl'] as String?,
-      duration: json['duration'] as int,
-      bpm: json['bpm'] as int,
+      duration: (json['duration'] as num?)?.toDouble() ?? 0,
+      bpm: (json['bpm'] as num?)?.toDouble(),
       isCurated: json['isCurated'] as bool? ?? false,
+      isAnalyzed: json['analyzedAt'] != null,
       steps: (json['steps'] as List<dynamic>?)
               ?.map((s) => Step.fromJson(s as Map<String, dynamic>))
               .toList() ??
@@ -77,8 +80,9 @@ class Lesson {
   }
 
   String get durationFormatted {
-    final minutes = duration ~/ 60;
-    final seconds = duration % 60;
+    final totalSecs = duration.round();
+    final minutes = totalSecs ~/ 60;
+    final seconds = totalSecs % 60;
     if (seconds == 0) return '${minutes}m';
     return '${minutes}m ${seconds}s';
   }

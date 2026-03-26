@@ -4,8 +4,7 @@ import '../models/lesson.dart';
 import '../models/practice_score.dart';
 
 class ApiService {
-  // Change this to your deployed API URL
-  static const String _baseUrl = 'http://10.0.2.2:3000/api';
+  static const String _baseUrl = 'https://dance-coach.vercel.app/api';
 
   Future<List<Lesson>> getLessons({String? style, String? difficulty}) async {
     final params = <String, String>{};
@@ -64,5 +63,14 @@ class ApiService {
       return data.map((s) => PracticeScore.fromJson(s as Map<String, dynamic>)).toList();
     }
     throw Exception('Failed to load scores: ${response.statusCode}');
+  }
+
+  Future<void> deleteLesson(String id) async {
+    final response = await http.delete(Uri.parse('$_baseUrl/lessons/$id'));
+
+    if (response.statusCode != 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      throw Exception(data['error'] ?? 'Failed to delete lesson');
+    }
   }
 }
