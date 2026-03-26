@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { lessons, steps, practiceScores } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { deleteObject } from "@/lib/storage";
+import { deleteObject, getDownloadUrl } from "@/lib/storage";
 
 export async function GET(
   _request: Request,
@@ -26,8 +26,23 @@ export async function GET(
     .where(eq(steps.lessonId, id))
     .orderBy(asc(steps.stepNumber));
 
+  // Generate a fresh presigned download URL (stored URL may be expired)
+  let videoUrl = lesson[0].videoUrl;
+  if (videoUrl) {
+    try {
+      const urlObj = new URL(videoUrl);
+      const key = urlObj.pathname.startsWith("/")
+        ? urlObj.pathname.slice(1)
+        : urlObj.pathname;
+      videoUrl = await getDownloadUrl(key);
+    } catch {
+      // If URL parsing fails, return as-is
+    }
+  }
+
   return NextResponse.json({
     ...lesson[0],
+    videoUrl,
     steps: lessonSteps,
   });
 }

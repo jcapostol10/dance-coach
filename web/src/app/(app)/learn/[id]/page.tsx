@@ -9,6 +9,7 @@ import { DeleteLessonButton } from "./delete-lesson-button";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { getDownloadUrl } from "@/lib/storage";
 
 const DIFFICULTY_COLORS: Record<string, string> = {
   Beginner: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -35,7 +36,20 @@ export default async function LearnPage({
     notFound();
   }
 
-  const lesson = lessonRows[0];
+  const lesson = { ...lessonRows[0] };
+
+  // Generate fresh presigned download URL (stored URL may be expired)
+  if (lesson.videoUrl) {
+    try {
+      const urlObj = new URL(lesson.videoUrl);
+      const key = urlObj.pathname.startsWith("/")
+        ? urlObj.pathname.slice(1)
+        : urlObj.pathname;
+      lesson.videoUrl = await getDownloadUrl(key);
+    } catch {
+      // If URL parsing fails, use as-is
+    }
+  }
 
   const lessonSteps = await db
     .select()
