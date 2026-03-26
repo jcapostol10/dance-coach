@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StepViewer } from "./step-viewer";
+import { DeleteLessonButton } from "./delete-lesson-button";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
@@ -86,9 +87,12 @@ export default async function LearnPage({
             )}
           </div>
         </div>
-        <Link href={`/practice/${id}`}>
-          <Button>Practice This Dance</Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <DeleteLessonButton lessonId={id} />
+          <Link href={`/practice/${id}`}>
+            <Button>Practice This Dance</Button>
+          </Link>
+        </div>
       </div>
 
       <Separator className="mb-6" />
