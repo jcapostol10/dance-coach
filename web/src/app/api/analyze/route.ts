@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // Fetch lesson to get video URL
+  // Fetch lesson from DB
   const lesson = await db
     .select()
     .from(lessons)
@@ -49,22 +49,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  const { videoUrl } = lesson[0];
-
   try {
-    // Download video to send to Gemini
+    // Download video from R2 using the stored URL
+    const { videoUrl } = lesson[0];
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
       return NextResponse.json(
-        { error: "Failed to fetch video from storage" },
+        { error: `Failed to fetch video from storage (${videoResponse.status})` },
         { status: 500 },
       );
     }
 
-    const videoBuffer = await videoResponse.arrayBuffer();
-    const base64Video = Buffer.from(videoBuffer).toString("base64");
+    const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+    const base64Video = videoBuffer.toString("base64");
 
-    // Analyze with Gemini Flash (native video understanding)
+    // Analyze with Gemini 2.5 Flash (native video understanding)
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const result = await model.generateContent([
@@ -84,7 +83,16 @@ export async function POST(request: Request) {
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
-    const analysis = JSON.parse(jsonStr);
+
+    let analysis;
+    try {
+      analysis = JSON.parse(jsonStr);
+    } catch {
+      return NextResponse.json(
+        { error: `AI returned invalid JSON: ${jsonStr.substring(0, 200)}` },
+        { status: 500 },
+      );
+    }
 
     // Store analysis results in DB
     await db
@@ -114,9 +122,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, lesson: analysis });
   } catch (err) {
     console.error("Analysis error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Analysis failed" },
-      { status: 500 },
-    );
+    const message = err instanceof Error ? err.message : "Analysis failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
