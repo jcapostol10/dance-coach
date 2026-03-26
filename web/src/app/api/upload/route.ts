@@ -1,35 +1,47 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { randomUUID } from "crypto";
-import { getUploadUrl, videoKey, getDownloadUrl } from "@/lib/storage";
 
 /**
  * POST /api/upload
  *
- * Returns a presigned URL for the client to upload a video directly to R2.
- * Body: { filename: string, contentType: string, lessonId?: string }
+ * Handles Vercel Blob client uploads. The client uploads directly to Blob
+ * storage (bypasses the 4.5MB serverless body limit), and this route
+ * handles the token generation and completion callback.
  */
-export async function POST(req: NextRequest) {
-  const { filename, contentType, lessonId } = await req.json();
+export async function POST(req: Request) {
+  const body = (await req.json()) as HandleUploadBody;
 
-  if (!filename || !contentType) {
+  try {
+    const jsonResponse = await handleUpload({
+      body,
+      request: req,
+      onBeforeGenerateToken: async () => {
+        // Auth check can go here
+        return {
+          allowedContentTypes: [
+            "video/mp4",
+            "video/quicktime",
+            "video/webm",
+            "video/x-msvideo",
+            "video/x-matroska",
+          ],
+          maximumSizeInBytes: 500 * 1024 * 1024, // 500MB max
+          tokenPayload: JSON.stringify({ lessonId: randomUUID() }),
+        };
+      },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        // Called after the file is uploaded to Blob storage
+        // We can process the video here if needed
+        console.log("Upload completed:", blob.url, tokenPayload);
+      },
+    });
+
+    return NextResponse.json(jsonResponse);
+  } catch (error) {
     return NextResponse.json(
-      { error: "filename and contentType are required" },
+      { error: (error as Error).message },
       { status: 400 },
     );
   }
-
-  if (!contentType.startsWith("video/")) {
-    return NextResponse.json(
-      { error: "Only video files are accepted" },
-      { status: 400 },
-    );
-  }
-
-  const id = lessonId || randomUUID();
-  const key = videoKey(id, filename);
-
-  const uploadUrl = await getUploadUrl(key, contentType);
-  const publicUrl = await getDownloadUrl(key);
-
-  return NextResponse.json({ uploadUrl, key, publicUrl, lessonId: id });
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -73,30 +74,16 @@ export default function UploadPage() {
       setProgress("Getting upload URL...");
       setError("");
 
-      // Step 1: Get presigned upload URL
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-        }),
-      });
-
-      if (!uploadRes.ok) throw new Error("Failed to get upload URL");
-      const { uploadUrl, publicUrl, lessonId } = await uploadRes.json();
-
-      // Step 2: Upload video directly to R2
+      // Step 1: Upload video directly to Vercel Blob (bypasses 4.5MB limit)
       setProgress(`Uploading ${(file.size / 1024 / 1024).toFixed(1)} MB...`);
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload",
       });
+      const publicUrl = blob.url;
+      const lessonId = crypto.randomUUID();
 
-      if (!putRes.ok) throw new Error("Failed to upload video to storage");
-
-      // Step 3: Create lesson record
+      // Step 2: Create lesson record
       setProgress("Creating lesson record...");
       const lessonRes = await fetch("/api/lessons", {
         method: "POST",
