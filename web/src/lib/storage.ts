@@ -79,6 +79,21 @@ export async function getDownloadUrl(
 }
 
 /**
+ * Copy a file from a URL (e.g. Vercel Blob) into R2.
+ * Used as part of the upload pipeline: Blob (temp) → R2 (permanent).
+ */
+export async function copyUrlToR2(
+  sourceUrl: string,
+  key: string,
+  contentType: string,
+): Promise<void> {
+  const res = await fetch(sourceUrl);
+  if (!res.ok) throw new Error(`Failed to fetch from source: ${res.status}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  await uploadObject(key, buffer, contentType);
+}
+
+/**
  * Delete an object from R2.
  */
 export async function deleteObject(key: string): Promise<void> {

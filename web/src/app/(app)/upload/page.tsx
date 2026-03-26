@@ -74,16 +74,32 @@ export default function UploadPage() {
       setProgress("Getting upload URL...");
       setError("");
 
-      // Step 1: Upload video directly to Vercel Blob (bypasses 4.5MB limit)
+      // Step 1: Upload video to Vercel Blob (no CORS issues, no size limit)
       setProgress(`Uploading ${(file.size / 1024 / 1024).toFixed(1)} MB...`);
       const blob = await upload(file.name, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
       });
-      const publicUrl = blob.url;
-      const lessonId = crypto.randomUUID();
 
-      // Step 2: Create lesson record
+      // Step 2: Copy from Blob → R2 (zero-egress permanent storage)
+      setProgress("Transferring to permanent storage...");
+      const finalizeRes = await fetch("/api/upload/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          filename: file.name,
+          contentType: file.type,
+        }),
+      });
+
+      if (!finalizeRes.ok) {
+        const errData = await finalizeRes.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to transfer video to storage");
+      }
+      const { publicUrl, lessonId } = await finalizeRes.json();
+
+      // Step 3: Create lesson record
       setProgress("Creating lesson record...");
       const lessonRes = await fetch("/api/lessons", {
         method: "POST",
