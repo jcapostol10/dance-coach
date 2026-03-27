@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { getDownloadUrl } from "@/lib/storage";
 
 export const maxDuration = 120;
 
@@ -81,7 +82,15 @@ export async function POST(request: Request) {
 
         send("progress", { phase: "download_video", pct: 10, message: "Downloading video from storage..." });
 
-        const { videoUrl } = lesson[0];
+        // Generate fresh presigned URL (stored URL may be expired)
+        let videoUrl = lesson[0].videoUrl;
+        try {
+          const urlObj = new URL(videoUrl);
+          const key = urlObj.pathname.startsWith("/") ? urlObj.pathname.slice(1) : urlObj.pathname;
+          videoUrl = await getDownloadUrl(key);
+        } catch {
+          // Use as-is if URL parsing fails
+        }
         const videoResponse = await fetch(videoUrl);
         if (!videoResponse.ok) {
           send("error", { error: `Failed to fetch video (${videoResponse.status})` });
@@ -185,7 +194,15 @@ async function handleAnalysis(lessonId: string) {
   }
 
   try {
-    const { videoUrl } = lesson[0];
+    // Generate fresh presigned URL (stored URL may be expired)
+    let videoUrl = lesson[0].videoUrl;
+    try {
+      const urlObj = new URL(videoUrl);
+      const key = urlObj.pathname.startsWith("/") ? urlObj.pathname.slice(1) : urlObj.pathname;
+      videoUrl = await getDownloadUrl(key);
+    } catch {
+      // Use as-is if URL parsing fails
+    }
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
       return NextResponse.json(
