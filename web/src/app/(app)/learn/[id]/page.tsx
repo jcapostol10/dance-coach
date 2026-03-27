@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StepViewer } from "./step-viewer";
+import { VideoPlayer } from "./video-player";
 import { DeleteLessonButton } from "./delete-lesson-button";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
@@ -113,15 +114,10 @@ export default async function LearnPage({
 
       {/* Video player */}
       <Card className="mb-6 overflow-hidden">
-        <div className="relative aspect-video bg-muted">
-          {lesson.videoUrl ? (
-            <video
-              src={lesson.videoUrl}
-              controls
-              className="h-full w-full object-contain"
-              preload="metadata"
-            />
-          ) : (
+        {lesson.videoUrl ? (
+          <VideoPlayer src={lesson.videoUrl} />
+        ) : (
+          <div className="relative aspect-video bg-muted">
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -138,8 +134,8 @@ export default async function LearnPage({
                 </p>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </Card>
 
       {/* Step-by-step viewer */}
