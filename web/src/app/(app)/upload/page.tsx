@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,19 @@ interface AnalysisResult {
   duration: number;
 }
 
+const PHASES = [
+  { key: "upload_url", label: "Preparing upload", pctEnd: 5 },
+  { key: "uploading", label: "Uploading video", pctEnd: 30 },
+  { key: "create_lesson", label: "Creating lesson", pctEnd: 35 },
+  { key: "fetch_lesson", label: "Loading lesson", pctEnd: 38 },
+  { key: "download_video", label: "Downloading video", pctEnd: 45 },
+  { key: "encode_video", label: "Preparing for AI", pctEnd: 50 },
+  { key: "ai_analyzing", label: "AI analyzing moves", pctEnd: 85 },
+  { key: "parse_results", label: "Parsing results", pctEnd: 90 },
+  { key: "save_results", label: "Saving analysis", pctEnd: 95 },
+  { key: "complete", label: "Complete", pctEnd: 100 },
+] as const;
+
 export default function UploadPage() {
   const { data: session, status } = useSession();
   const [file, setFile] = useState<File | null>(null);
@@ -34,10 +47,12 @@ export default function UploadPage() {
   const [style, setStyle] = useState("Hip-Hop");
   const [difficulty, setDifficulty] = useState("Beginner");
   const [state, setState] = useState<UploadState>("idle");
-  const [progress, setProgress] = useState("");
+  const [pct, setPct] = useState(0);
+  const [phaseLabel, setPhaseLabel] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   if (status === "loading") return null;
   if (!session || (session.user as { role?: string }).role !== "admin") {
@@ -65,39 +80,157 @@ export default function UploadPage() {
     }
   }
 
+  /** Upload file to R2 with real progress tracking via XHR */
+  function uploadToR2(url: string, fileToUpload: File): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Type", fileToUpload.type);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          // Upload is 5-30% of total progress
+          const uploadPct = 5 + (e.loaded / e.total) * 25;
+          setPct(Math.round(uploadPct));
+          const mbLoaded = (e.loaded / 1024 / 1024).toFixed(1);
+          const mbTotal = (e.total / 1024 / 1024).toFixed(1);
+          setPhaseLabel(`Uploading video — ${mbLoaded} / ${mbTotal} MB`);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Upload failed (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("Upload failed — network error"));
+      xhr.send(fileToUpload);
+    });
+  }
+
+  /** Listen to SSE progress from the analyze endpoint */
+  async function streamAnalysis(lessonId: string): Promise<AnalysisResult> {
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      // Start a slow animation timer for the AI phase (35→85%)
+      // since Gemini gives no intermediate progress
+      let aiTimer: ReturnType<typeof setInterval> | null = null;
+      let currentAiPct = 35;
+
+      fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lessonId, stream: true }),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Analysis failed (${res.status})`);
+          }
+
+          const reader = res.body?.getReader();
+          if (!reader) throw new Error("No response stream");
+
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            let currentEvent = "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                currentEvent = line.slice(7).trim();
+              } else if (line.startsWith("data: ") && currentEvent) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+
+                  if (currentEvent === "progress") {
+                    const serverPct = data.pct as number;
+
+                    // Start slow animation when AI analysis begins
+                    if (data.phase === "ai_analyzing" && !aiTimer) {
+                      currentAiPct = 35;
+                      aiTimer = setInterval(() => {
+                        // Creep slowly from 35→78% over ~60s
+                        if (currentAiPct < 78) {
+                          currentAiPct += 0.5;
+                          setPct(Math.round(currentAiPct));
+                        }
+                      }, 700);
+                      setPhaseLabel(data.message);
+                    } else if (data.phase !== "ai_analyzing") {
+                      // For non-AI phases, use server-reported %
+                      if (aiTimer) {
+                        clearInterval(aiTimer);
+                        aiTimer = null;
+                      }
+                      setPct(serverPct);
+                      setPhaseLabel(data.message);
+                    }
+                  } else if (currentEvent === "done") {
+                    if (aiTimer) clearInterval(aiTimer);
+                    setPct(100);
+                    setPhaseLabel("Analysis complete!");
+                    resolve(data.lesson);
+                    return;
+                  } else if (currentEvent === "error") {
+                    if (aiTimer) clearInterval(aiTimer);
+                    reject(new Error(data.error));
+                    return;
+                  }
+                } catch {
+                  // skip malformed JSON
+                }
+                currentEvent = "";
+              }
+            }
+          }
+
+          if (aiTimer) clearInterval(aiTimer);
+          reject(new Error("Stream ended without result"));
+        })
+        .catch((err) => {
+          if (aiTimer) clearInterval(aiTimer);
+          reject(err);
+        });
+    });
+  }
+
   async function handleUpload() {
     if (!file || !title) return;
 
     try {
       setState("uploading");
-      setProgress("Getting upload URL...");
+      setPct(2);
+      setPhaseLabel("Getting upload URL...");
       setError("");
 
       // Step 1: Get presigned upload URL
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-        }),
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
       });
 
       if (!uploadRes.ok) throw new Error("Failed to get upload URL");
       const { uploadUrl, publicUrl, lessonId } = await uploadRes.json();
+      setPct(5);
 
-      // Step 2: Upload video directly to R2
-      setProgress(`Uploading ${(file.size / 1024 / 1024).toFixed(1)} MB...`);
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-
-      if (!putRes.ok) throw new Error("Failed to upload video to storage");
+      // Step 2: Upload video to R2 with progress
+      await uploadToR2(uploadUrl, file);
+      setPct(30);
 
       // Step 3: Create lesson record
-      setProgress("Creating lesson record...");
+      setPhaseLabel("Creating lesson record...");
+      setPct(32);
       const lessonRes = await fetch("/api/lessons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -112,43 +245,38 @@ export default function UploadPage() {
       });
 
       if (!lessonRes.ok) throw new Error("Failed to create lesson");
+      setPct(35);
 
-      // Step 4: Trigger AI analysis
+      // Step 4: AI analysis with streamed progress
       setState("analyzing");
-      setProgress("AI is analyzing your video — detecting beats, extracting poses, describing moves...");
+      setPhaseLabel("Starting AI analysis...");
+      const analysis = await streamAnalysis(lessonId);
 
-      const analyzeRes = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lessonId }),
-      });
-
-      if (!analyzeRes.ok) {
-        const errData = await analyzeRes.json().catch(() => ({}));
-        throw new Error(errData.error || "Analysis failed");
-      }
-
-      const analysisResult = await analyzeRes.json();
-      setResult(analysisResult.lesson);
+      setResult(analysis);
       setState("done");
-      setProgress("");
     } catch (err) {
       setState("error");
       setError(err instanceof Error ? err.message : "Something went wrong");
-      setProgress("");
+      setPct(0);
+      setPhaseLabel("");
     }
   }
 
   function reset() {
+    if (abortRef.current) abortRef.current.abort();
     setFile(null);
     setTitle("");
     setStyle("Hip-Hop");
     setDifficulty("Beginner");
     setState("idle");
-    setProgress("");
+    setPct(0);
+    setPhaseLabel("");
     setResult(null);
     setError("");
   }
+
+  const activePhaseIdx = PHASES.findIndex((p) => pct <= p.pctEnd);
+  const isWorking = state === "uploading" || state === "analyzing";
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -193,7 +321,6 @@ export default function UploadPage() {
                   </span>
                   <div>
                     <p className="text-sm font-medium">{step.name}</p>
-                    <p className="text-xs text-muted-foreground">{step.description}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {step.start_time.toFixed(1)}s — {step.end_time.toFixed(1)}s
                     </p>
@@ -227,12 +354,14 @@ export default function UploadPage() {
                   <p className="text-xs text-muted-foreground">
                     {(file.size / 1024 / 1024).toFixed(1)} MB
                   </p>
-                  <button
-                    onClick={() => setFile(null)}
-                    className="mt-2 text-xs text-red-400 hover:underline"
-                  >
-                    Remove
-                  </button>
+                  {!isWorking && (
+                    <button
+                      onClick={() => setFile(null)}
+                      className="mt-2 text-xs text-red-400 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -260,7 +389,8 @@ export default function UploadPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Basic Hip-Hop Groove"
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                disabled={isWorking}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
               />
             </div>
 
@@ -270,7 +400,8 @@ export default function UploadPage() {
                 <select
                   value={style}
                   onChange={(e) => setStyle(e.target.value)}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                  disabled={isWorking}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
                 >
                   {STYLES.map((s) => (
                     <option key={s} value={s}>{s}</option>
@@ -282,7 +413,8 @@ export default function UploadPage() {
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value)}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                  disabled={isWorking}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
                 >
                   {DIFFICULTIES.map((d) => (
                     <option key={d} value={d}>{d}</option>
@@ -291,11 +423,55 @@ export default function UploadPage() {
               </div>
             </div>
 
-            {/* Status */}
-            {progress && (
-              <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-3">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                <p className="text-sm text-muted-foreground">{progress}</p>
+            {/* Progress bar */}
+            {isWorking && (
+              <div className="space-y-3">
+                {/* Bar */}
+                <div className="overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-2.5 rounded-full bg-primary transition-all duration-500 ease-out"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+
+                {/* Percentage + label */}
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">{phaseLabel}</p>
+                  <span className="font-mono text-sm font-semibold text-foreground">
+                    {pct}%
+                  </span>
+                </div>
+
+                {/* Phase checklist */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  {PHASES.map((phase, i) => {
+                    const isDone = pct >= phase.pctEnd;
+                    const isActive = i === activePhaseIdx;
+                    return (
+                      <div
+                        key={phase.key}
+                        className={`flex items-center gap-2 text-xs ${
+                          isDone
+                            ? "text-green-400"
+                            : isActive
+                              ? "text-foreground"
+                              : "text-muted-foreground/50"
+                        }`}
+                      >
+                        {isDone ? (
+                          <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : isActive ? (
+                          <div className="h-3.5 w-3.5 flex-shrink-0 animate-spin rounded-full border border-primary border-t-transparent" />
+                        ) : (
+                          <div className="h-3.5 w-3.5 flex-shrink-0 rounded-full border border-muted-foreground/30" />
+                        )}
+                        {phase.label}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -307,14 +483,14 @@ export default function UploadPage() {
 
             <Button
               onClick={handleUpload}
-              disabled={!file || !title || state === "uploading" || state === "analyzing"}
+              disabled={!file || !title || isWorking}
               className="w-full"
             >
               {state === "uploading"
                 ? "Uploading..."
                 : state === "analyzing"
-                ? "Analyzing..."
-                : "Upload & Analyze"}
+                  ? "Analyzing..."
+                  : "Upload & Analyze"}
             </Button>
           </CardContent>
         </Card>

@@ -34,7 +34,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code fences. Each description
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { lessonId } = body;
+  const { lessonId, stream: useStream } = body;
 
   if (!lessonId) {
     return NextResponse.json(
@@ -43,7 +43,128 @@ export async function POST(request: Request) {
     );
   }
 
-  // Fetch lesson from DB
+  // Non-streaming mode (backwards compatible)
+  if (!useStream) {
+    return handleAnalysis(lessonId);
+  }
+
+  // Streaming mode — send SSE progress events
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      function send(event: string, data: Record<string, unknown>) {
+        controller.enqueue(
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+        );
+      }
+
+      try {
+        send("progress", { phase: "fetch_lesson", pct: 5, message: "Loading lesson data..." });
+
+        const lesson = await db
+          .select()
+          .from(lessons)
+          .where(eq(lessons.id, lessonId))
+          .limit(1);
+
+        if (lesson.length === 0) {
+          send("error", { error: "Lesson not found" });
+          controller.close();
+          return;
+        }
+
+        send("progress", { phase: "download_video", pct: 10, message: "Downloading video from storage..." });
+
+        const { videoUrl } = lesson[0];
+        const videoResponse = await fetch(videoUrl);
+        if (!videoResponse.ok) {
+          send("error", { error: `Failed to fetch video (${videoResponse.status})` });
+          controller.close();
+          return;
+        }
+
+        send("progress", { phase: "encode_video", pct: 25, message: "Preparing video for AI analysis..." });
+
+        const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+        const base64Video = videoBuffer.toString("base64");
+
+        send("progress", { phase: "ai_analyzing", pct: 35, message: "AI is analyzing dance movements..." });
+
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const result = await model.generateContent([
+          { text: ANALYSIS_PROMPT },
+          {
+            inlineData: {
+              mimeType: "video/mp4",
+              data: base64Video,
+            },
+          },
+        ]);
+
+        send("progress", { phase: "parse_results", pct: 80, message: "Parsing AI results..." });
+
+        const responseText = result.response.text();
+        const jsonStr = responseText
+          .replace(/```json\s*/g, "")
+          .replace(/```\s*/g, "")
+          .trim();
+
+        let analysis;
+        try {
+          analysis = JSON.parse(jsonStr);
+        } catch {
+          send("error", { error: "AI returned invalid response. Please try again." });
+          controller.close();
+          return;
+        }
+
+        send("progress", { phase: "save_results", pct: 90, message: "Saving analysis to database..." });
+
+        await db
+          .update(lessons)
+          .set({
+            bpm: analysis.bpm,
+            beats: analysis.beats,
+            duration: analysis.duration,
+            analyzedAt: new Date(),
+          })
+          .where(eq(lessons.id, lessonId));
+
+        for (const step of analysis.steps) {
+          await db.insert(steps).values({
+            lessonId,
+            stepNumber: step.id,
+            name: step.name,
+            description: step.description,
+            startBeat: step.start_beat,
+            endBeat: step.end_beat,
+            startTime: step.start_time,
+            endTime: step.end_time,
+          });
+        }
+
+        send("progress", { phase: "complete", pct: 100, message: "Analysis complete!" });
+        send("done", { lesson: analysis });
+        controller.close();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Analysis failed";
+        send("error", { error: message });
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/** Non-streaming analysis handler (backwards compatible for mobile/API) */
+async function handleAnalysis(lessonId: string) {
   const lesson = await db
     .select()
     .from(lessons)
@@ -55,7 +176,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Download video from R2 using the stored URL
     const { videoUrl } = lesson[0];
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
@@ -68,7 +188,6 @@ export async function POST(request: Request) {
     const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
     const base64Video = videoBuffer.toString("base64");
 
-    // Analyze with Gemini 2.5 Flash (native video understanding)
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const result = await model.generateContent([
@@ -82,8 +201,6 @@ export async function POST(request: Request) {
     ]);
 
     const responseText = result.response.text();
-
-    // Parse JSON from response (strip markdown fences if present)
     const jsonStr = responseText
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
@@ -99,7 +216,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Store analysis results in DB
     await db
       .update(lessons)
       .set({
@@ -110,7 +226,6 @@ export async function POST(request: Request) {
       })
       .where(eq(lessons.id, lessonId));
 
-    // Store steps
     for (const step of analysis.steps) {
       await db.insert(steps).values({
         lessonId,
