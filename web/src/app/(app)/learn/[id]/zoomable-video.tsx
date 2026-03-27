@@ -177,8 +177,8 @@ export function ZoomableVideo({ children }: ZoomableVideoProps) {
         </button>
       )}
       {scale <= 1 && (
-        <div className="absolute bottom-2 left-2 z-10 rounded bg-black/40 px-2 py-0.5">
-          <span className="text-[10px] text-white/70">
+        <div className="absolute right-2 top-2 z-10 rounded-md bg-primary/80 px-2 py-1">
+          <span className="text-[11px] font-medium text-primary-foreground">
             Ctrl+Scroll to zoom
           </span>
         </div>
