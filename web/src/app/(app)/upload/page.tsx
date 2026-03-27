@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DANCE_STYLE_CATEGORIES } from "@/lib/dance-styles";
 import {
   Card,
   CardContent,
@@ -59,7 +60,6 @@ export default function UploadPage() {
     redirect("/login");
   }
 
-  const STYLES = ["Hip-Hop", "Salsa", "Contemporary", "K-Pop", "Breaking", "House", "Jazz", "Ballet"];
   const DIFFICULTIES = ["Beginner", "Intermediate", "Advanced"];
 
   function handleDrop(e: React.DragEvent) {
@@ -403,8 +403,12 @@ export default function UploadPage() {
                   disabled={isWorking}
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:opacity-50"
                 >
-                  {STYLES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
+                  {DANCE_STYLE_CATEGORIES.map((cat) => (
+                    <optgroup key={cat.category} label={cat.category}>
+                      {cat.styles.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </div>

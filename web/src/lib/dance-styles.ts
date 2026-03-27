@@ -1,0 +1,145 @@
+export interface StyleCategory {
+  category: string;
+  styles: string[];
+}
+
+export const DANCE_STYLE_CATEGORIES: StyleCategory[] = [
+  {
+    category: "Street / Urban",
+    styles: [
+      "Hip-Hop",
+      "Breaking",
+      "Popping",
+      "Locking",
+      "Krumping",
+      "Waacking",
+      "Voguing",
+      "House",
+      "Tutting",
+      "Lite Feet",
+      "Memphis Jookin'",
+      "Flexing",
+      "Animation",
+    ],
+  },
+  {
+    category: "Latin",
+    styles: [
+      "Salsa",
+      "Bachata",
+      "Merengue",
+      "Cumbia",
+      "Cha-Cha",
+      "Rumba",
+      "Samba",
+      "Mambo",
+      "Reggaeton",
+      "Zouk",
+      "Kizomba",
+      "Forró",
+      "Lambada",
+      "Rueda De Casino",
+    ],
+  },
+  {
+    category: "Ballroom",
+    styles: [
+      "Waltz",
+      "Viennese Waltz",
+      "Foxtrot",
+      "Quickstep",
+      "Tango",
+      "Paso Doble",
+      "Jive",
+    ],
+  },
+  {
+    category: "Social / Swing",
+    styles: [
+      "East Coast Swing",
+      "West Coast Swing",
+      "Lindy Hop",
+      "Charleston",
+      "Hustle",
+      "Country Two-Step",
+      "Argentine Tango",
+      "Milonga",
+      "Blues Dancing",
+      "Night Club Two-Step",
+      "Modern Jive",
+      "Polka",
+    ],
+  },
+  {
+    category: "Club / Electronic",
+    styles: [
+      "Shuffling",
+      "Cutting Shapes",
+      "Liquid",
+      "Gloving",
+      "Jumpstyle",
+      "Tecktonik",
+      "Industrial Dance",
+    ],
+  },
+  {
+    category: "Contemporary / Concert",
+    styles: [
+      "Contemporary",
+      "Modern",
+      "Jazz",
+      "Lyrical",
+      "Ballet",
+      "Tap",
+      "Musical Theatre",
+      "Acro Dance",
+      "Contact Improvisation",
+    ],
+  },
+  {
+    category: "Cultural / World",
+    styles: [
+      "K-Pop",
+      "Bollywood",
+      "Flamenco",
+      "Irish Step Dance",
+      "Bhangra",
+      "Afrobeats",
+      "Amapiano",
+      "Dancehall",
+      "Soca",
+      "Capoeira",
+      "Belly Dance",
+      "Dabke",
+      "Kathak",
+      "Ballet Folklórico",
+      "Scottish Highland",
+      "Hula",
+    ],
+  },
+  {
+    category: "Line / Group",
+    styles: [
+      "Line Dancing",
+      "Square Dancing",
+      "Stepping",
+      "Majorette",
+      "Contra Dance",
+    ],
+  },
+  {
+    category: "Freestyle / Other",
+    styles: [
+      "Freestyle",
+      "Choreography",
+      "Heels Dance",
+      "Pole Dance",
+      "Twerk",
+      "Burlesque",
+      "Interpretive",
+    ],
+  },
+];
+
+/** Flat list of all styles for validation / simple dropdowns */
+export const ALL_STYLES = DANCE_STYLE_CATEGORIES.flatMap((c) => c.styles);
