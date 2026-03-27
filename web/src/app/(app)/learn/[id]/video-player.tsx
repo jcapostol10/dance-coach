@@ -3,11 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 const SPEED_OPTIONS = [
+  { value: 25, label: "0.25x" },
   { value: 50, label: "0.5x" },
   { value: 75, label: "0.75x" },
   { value: 100, label: "1x" },
-  { value: 125, label: "1.25x" },
-  { value: 150, label: "1.5x" },
 ];
 
 export function VideoPlayer({ src }: { src: string }) {
