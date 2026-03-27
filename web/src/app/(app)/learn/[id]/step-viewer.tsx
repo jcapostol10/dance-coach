@@ -6,11 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
-import {
-  initPoseLandmarker,
-  detectPose,
-  drawPose,
-} from "@/lib/pose-detection";
 
 interface Step {
   id: number;
@@ -29,94 +24,92 @@ export function StepViewer({
   steps: Step[];
   videoUrl: string | null;
 }) {
-  // Proxy the video URL through our API to avoid CORS issues with canvas/MediaPipe
-  const proxiedVideoUrl = videoUrl
-    ? `/api/video-proxy?url=${encodeURIComponent(videoUrl)}`
-    : null;
   const [currentStep, setCurrentStep] = useState(0);
   const [speed, setSpeed] = useState(100);
-  const [poseReady, setPoseReady] = useState(false);
-  const [poseLoading, setPoseLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const lastRenderedStep = useRef<number>(-1);
+  const loopCheckRef = useRef<number>(0);
 
   const step = steps[currentStep];
 
-  // Init MediaPipe
+  // Seek to step start when step changes
   useEffect(() => {
-    if (!videoUrl) return;
-    setPoseLoading(true);
-    initPoseLandmarker()
-      .then(() => setPoseReady(true))
-      .catch((err) => console.error("Pose init failed:", err))
-      .finally(() => setPoseLoading(false));
-  }, [videoUrl]);
-
-  // Seek video + detect pose when step changes
-  const renderPoseForStep = useCallback(() => {
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !poseReady || !step) return;
-    if (video.readyState < 2) return;
+    if (!video || !step) return;
 
-    // Use midpoint of the step for the best representative frame
-    const seekTime = (step.startTime + step.endTime) / 2;
-    video.currentTime = seekTime;
-  }, [poseReady, step]);
+    video.pause();
+    setIsPlaying(false);
+    video.currentTime = step.startTime;
+  }, [step]);
 
-  // When video seeks to the right time, detect pose
-  const handleSeeked = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !poseReady) return;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    const result = detectPose(video, Math.round(performance.now()));
-    const ctx = canvas.getContext("2d");
-    if (result && ctx) {
-      // Draw video frame first
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      // Draw skeleton overlay on top
-      drawPose(ctx, result, canvas.width, canvas.height);
-    }
-    lastRenderedStep.current = currentStep;
-  }, [poseReady, currentStep]);
-
-  // Trigger pose render when step changes or pose becomes ready
+  // Apply playback rate when speed changes
   useEffect(() => {
-    if (poseReady && step && lastRenderedStep.current !== currentStep) {
-      renderPoseForStep();
-    }
-  }, [poseReady, step, currentStep, renderPoseForStep]);
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = speed / 100;
+  }, [speed]);
 
-  // Handle video loaded
-  const handleLoadedData = useCallback(() => {
-    if (poseReady && step) {
-      renderPoseForStep();
+  // Loop within step boundaries using timeupdate
+  const handleTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !step) return;
+
+    if (video.currentTime >= step.endTime) {
+      video.currentTime = step.startTime;
     }
-  }, [poseReady, step, renderPoseForStep]);
+  }, [step]);
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !step) return;
+
+    if (isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+    } else {
+      // Ensure we're within step bounds before playing
+      if (video.currentTime < step.startTime || video.currentTime >= step.endTime) {
+        video.currentTime = step.startTime;
+      }
+      video.playbackRate = speed / 100;
+      video.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  }, [isPlaying, step, speed]);
+
+  // Pause when component unmounts
+  useEffect(() => {
+    return () => {
+      if (loopCheckRef.current) cancelAnimationFrame(loopCheckRef.current);
+    };
+  }, []);
+
+  // Parse description into instruction sections
+  const parseInstructions = (description: string) => {
+    const sections: { label: string; text: string }[] = [];
+    const lines = description.split("\n").filter((l) => l.trim());
+
+    for (const line of lines) {
+      const match = line.match(/^\*\*(.+?)\*\*[:\s]*(.+)/);
+      if (match) {
+        sections.push({ label: match[1], text: match[2] });
+      } else if (line.trim()) {
+        // Fallback for non-labeled lines
+        sections.push({ label: "", text: line.trim() });
+      }
+    }
+
+    return sections.length > 0 ? sections : [{ label: "", text: description }];
+  };
 
   if (!step) return null;
 
+  const instructions = parseInstructions(step.description);
+
+  const stepDuration = step.endTime - step.startTime;
+
   return (
     <div>
-      {/* Hidden video element for pose extraction */}
-      {proxiedVideoUrl && (
-        <video
-          ref={videoRef}
-          src={proxiedVideoUrl}
-          preload="auto"
-          muted
-          playsInline
-          onLoadedData={handleLoadedData}
-          onSeeked={handleSeeked}
-          className="hidden"
-        />
-      )}
-
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-heading text-lg font-semibold">
           Step-by-Step Breakdown
@@ -162,41 +155,86 @@ export function StepViewer({
             <CardTitle className="text-base">
               Step {step.id}: {step.name}
             </CardTitle>
-            <Badge variant="outline" className="font-mono text-xs">
-              Beats {step.startBeat}–{step.endBeat}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-mono text-xs">
+                {stepDuration.toFixed(1)}s
+              </Badge>
+              <Badge variant="outline" className="font-mono text-xs">
+                Beats {step.startBeat}–{step.endBeat}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-            {step.description}
-          </p>
-
-          {/* Pose skeleton overlay from reference video */}
+          {/* Clipped video player */}
           <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
             {videoUrl ? (
               <>
-                <canvas
-                  ref={canvasRef}
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  preload="auto"
+                  muted
+                  playsInline
+                  onTimeUpdate={handleTimeUpdate}
+                  onPause={() => setIsPlaying(false)}
+                  onPlay={() => setIsPlaying(true)}
                   className="h-full w-full object-contain"
                 />
-                {(poseLoading || (!poseReady && videoUrl)) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                    <div className="text-center">
-                      <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      <p className="text-xs text-muted-foreground">
-                        Loading pose detection...
-                      </p>
+                {/* Play/Pause overlay */}
+                <button
+                  onClick={togglePlay}
+                  className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/20"
+                >
+                  {!isPlaying && (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-lg">
+                      <svg className="ml-1 h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
                     </div>
+                  )}
+                </button>
+                {/* Speed indicator */}
+                {isPlaying && speed !== 100 && (
+                  <div className="absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5">
+                    <span className="font-mono text-xs text-white">
+                      {speed / 100}x
+                    </span>
                   </div>
                 )}
               </>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
                 <p className="text-xs text-muted-foreground">
-                  No video available for pose overlay
+                  No video available
                 </p>
               </div>
+            )}
+          </div>
+
+          <Separator className="my-4" />
+
+          {/* Detailed movement instructions */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold">How to Execute</h3>
+            {instructions.map((inst, i) =>
+              inst.label ? (
+                <div key={i} className="flex gap-3">
+                  <Badge
+                    variant="outline"
+                    className="mt-0.5 h-fit flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider"
+                  >
+                    {inst.label}
+                  </Badge>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {inst.text}
+                  </p>
+                </div>
+              ) : (
+                <p key={i} className="text-sm leading-relaxed text-muted-foreground">
+                  {inst.text}
+                </p>
+              ),
             )}
           </div>
 

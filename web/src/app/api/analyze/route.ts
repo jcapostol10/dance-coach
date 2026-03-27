@@ -8,7 +8,7 @@ export const maxDuration = 120;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-const ANALYSIS_PROMPT = `You are a dance analysis AI. Analyze this dance video and return a JSON object with:
+const ANALYSIS_PROMPT = `You are a dance instructor AI. Analyze this dance video and return a JSON object with:
 
 1. **bpm**: Estimated beats per minute of the music (number)
 2. **beats**: Array of beat timestamps in seconds (e.g. [0.4, 0.8, 1.2, ...]) — estimate at least 8-16 beats
@@ -16,16 +16,21 @@ const ANALYSIS_PROMPT = `You are a dance analysis AI. Analyze this dance video a
 4. **steps**: Array of distinct dance moves/steps, each with:
    - id: sequential number starting from 1
    - name: short name for the move (e.g. "Body Roll", "Step Touch", "Arm Wave")
-   - description: 1-2 sentence description of what the dancer is doing
+   - description: Detailed execution instructions written as if teaching someone how to perform the move. Use this exact format with **bold labels** on each line:
+     **Arms & Hands:** describe exact arm positions, hand shapes, wrist angles, and arm paths through space
+     **Core & Torso:** describe any torso rotation, lean, isolation, chest pop, or body roll
+     **Legs & Feet:** describe exact foot placement, knee bend, which foot steps where and when
+     **Weight & Stance:** describe weight distribution, transfers between feet, center of gravity shifts
+     **Timing:** describe how the movement syncs to the beat count (e.g. "step on 1, hold on 2")
    - start_time: when this move starts (seconds)
    - end_time: when this move ends (seconds)
    - start_beat: which beat number this move starts on
    - end_beat: which beat number this move ends on
 
-Identify 3-8 distinct steps/moves. Be specific about the dance movements.
+Identify 3-8 distinct steps/moves. Write descriptions as clear instructions a student can follow, not observations of what the dancer does. Be specific about directions (left/right), angles, and body mechanics.
 
-IMPORTANT: Return ONLY valid JSON, no markdown, no code fences. Example format:
-{"bpm":120,"beats":[0.5,1.0,1.5],"duration":30,"steps":[{"id":1,"name":"Step Touch","description":"Side step with a touch","start_time":0,"end_time":5,"start_beat":1,"end_beat":10}]}`;
+IMPORTANT: Return ONLY valid JSON, no markdown, no code fences. Each description should be a single string with newlines (\\n) between the labeled sections. Example format:
+{"bpm":120,"beats":[0.5,1.0,1.5],"duration":30,"steps":[{"id":1,"name":"Step Touch","description":"**Arms & Hands:** Extend both arms to shoulder height...\\n**Core & Torso:** Keep your torso upright...\\n**Legs & Feet:** Step your right foot out to the side...\\n**Weight & Stance:** Shift your weight fully onto the stepping foot...\\n**Timing:** Step on beat 1, touch on beat 2","start_time":0,"end_time":5,"start_beat":1,"end_beat":10}]}`;
 
 export async function POST(request: Request) {
   const body = await request.json();
