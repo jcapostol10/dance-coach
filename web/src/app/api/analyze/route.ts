@@ -27,7 +27,13 @@ const ANALYSIS_PROMPT = `You are a dance instructor AI. Analyze this dance video
    - start_beat: which beat number this move starts on
    - end_beat: which beat number this move ends on
 
-Identify 3-8 distinct steps/moves. Write descriptions as clear instructions a student can follow, not observations of what the dancer does. Be specific about directions (left/right), angles, and body mechanics.
+CRITICAL RULES:
+- You MUST analyze the ENTIRE video from the very first second to the very last second. Do NOT skip any part.
+- If the video contains multiple dance segments, routines, or songs, break down ALL of them — not just one.
+- There is NO maximum limit on steps. Use as many steps as needed to cover every distinct move in the full video. A 30-second video might have 4-6 steps. A 2-minute video might have 15-25 steps.
+- Steps must be in chronological order and their start_time/end_time must cover the full duration with no gaps.
+- The first step must start at or near 0 seconds. The last step must end at or near the video's total duration.
+- Write descriptions as clear instructions a student can follow, not observations of what the dancer does. Be specific about directions (left/right), angles, and body mechanics.
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no code fences. Each description should be a single string with newlines (\\n) between the labeled sections. Example format:
 {"bpm":120,"beats":[0.5,1.0,1.5],"duration":30,"steps":[{"id":1,"name":"Step Touch","description":"**Arms & Hands:** Extend both arms to shoulder height...\\n**Core & Torso:** Keep your torso upright...\\n**Legs & Feet:** Step your right foot out to the side...\\n**Weight & Stance:** Shift your weight fully onto the stepping foot...\\n**Timing:** Step on beat 1, touch on beat 2","start_time":0,"end_time":5,"start_beat":1,"end_beat":10}]}`;
@@ -119,6 +125,9 @@ export async function POST(request: Request) {
         }
 
         send("progress", { phase: "save_results", pct: 90, message: "Saving analysis to database..." });
+
+        // Delete old steps (in case of re-analysis)
+        await db.delete(steps).where(eq(steps.lessonId, lessonId));
 
         await db
           .update(lessons)
@@ -215,6 +224,9 @@ async function handleAnalysis(lessonId: string) {
         { status: 500 },
       );
     }
+
+    // Delete old steps (in case of re-analysis)
+    await db.delete(steps).where(eq(steps.lessonId, lessonId));
 
     await db
       .update(lessons)
