@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ZoomableVideo } from "./zoomable-video";
 
 interface Step {
   id: number;
@@ -148,49 +149,51 @@ export function StepViewer({
         </CardHeader>
         <CardContent>
           {/* Clipped video player */}
-          <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
-            {videoUrl ? (
-              <>
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  preload="auto"
-                  playsInline
-                  onTimeUpdate={handleTimeUpdate}
-                  onPause={() => setIsPlaying(false)}
-                  onPlay={() => setIsPlaying(true)}
-                  className="h-full w-full object-contain"
-                />
-                {/* Play/Pause overlay */}
-                <button
-                  onClick={togglePlay}
-                  className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/20"
-                >
-                  {!isPlaying && (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-lg">
-                      <svg className="ml-1 h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
+          <ZoomableVideo>
+            <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+              {videoUrl ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    preload="auto"
+                    playsInline
+                    onTimeUpdate={handleTimeUpdate}
+                    onPause={() => setIsPlaying(false)}
+                    onPlay={() => setIsPlaying(true)}
+                    className="h-full w-full object-contain"
+                  />
+                  {/* Play/Pause overlay */}
+                  <button
+                    onClick={togglePlay}
+                    className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/20"
+                  >
+                    {!isPlaying && (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-lg">
+                        <svg className="ml-1 h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                  {/* Speed indicator on video */}
+                  {isPlaying && (
+                    <div className="absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5">
+                      <span className="font-mono text-xs text-white">
+                        {speed / 100}x
+                      </span>
                     </div>
                   )}
-                </button>
-                {/* Speed indicator on video */}
-                {isPlaying && (
-                  <div className="absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5">
-                    <span className="font-mono text-xs text-white">
-                      {speed / 100}x
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <p className="text-xs text-muted-foreground">
-                  No video available
-                </p>
-              </div>
-            )}
-          </div>
+                </>
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground">
+                    No video available
+                  </p>
+                </div>
+              )}
+            </div>
+          </ZoomableVideo>
 
           {/* Speed control under video */}
           {videoUrl && (

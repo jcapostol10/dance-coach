@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ZoomableVideo } from "./zoomable-video";
 
 const SPEED_OPTIONS = [
   { value: 25, label: "0.25x" },
@@ -21,15 +22,17 @@ export function VideoPlayer({ src }: { src: string }) {
 
   return (
     <div>
-      <div className="relative aspect-video bg-muted">
-        <video
-          ref={videoRef}
-          src={src}
-          controls
-          className="h-full w-full object-contain"
-          preload="metadata"
-        />
-      </div>
+      <ZoomableVideo>
+        <div className="relative aspect-video bg-muted">
+          <video
+            ref={videoRef}
+            src={src}
+            controls
+            className="h-full w-full object-contain"
+            preload="metadata"
+          />
+        </div>
+      </ZoomableVideo>
       <div className="flex items-center justify-center gap-1.5 border-t border-border bg-card px-4 py-2.5">
         <span className="mr-1 text-xs font-medium text-muted-foreground">
           Speed
