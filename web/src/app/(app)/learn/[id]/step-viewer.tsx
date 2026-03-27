@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 
 interface Step {
@@ -17,6 +16,13 @@ interface Step {
   endTime: number;
 }
 
+const SPEED_OPTIONS = [
+  { value: 25, label: "0.25x" },
+  { value: 50, label: "0.5x" },
+  { value: 75, label: "0.75x" },
+  { value: 100, label: "1x" },
+];
+
 export function StepViewer({
   steps,
   videoUrl,
@@ -25,10 +31,9 @@ export function StepViewer({
   videoUrl: string | null;
 }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [speed, setSpeed] = useState(100);
+  const [speed, setSpeed] = useState(50);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const loopCheckRef = useRef<number>(0);
 
   const step = steps[currentStep];
 
@@ -49,7 +54,7 @@ export function StepViewer({
     video.playbackRate = speed / 100;
   }, [speed]);
 
-  // Loop within step boundaries using timeupdate
+  // Loop within step boundaries
   const handleTimeUpdate = useCallback(() => {
     const video = videoRef.current;
     if (!video || !step) return;
@@ -67,7 +72,6 @@ export function StepViewer({
       video.pause();
       setIsPlaying(false);
     } else {
-      // Ensure we're within step bounds before playing
       if (video.currentTime < step.startTime || video.currentTime >= step.endTime) {
         video.currentTime = step.startTime;
       }
@@ -76,13 +80,6 @@ export function StepViewer({
       setIsPlaying(true);
     }
   }, [isPlaying, step, speed]);
-
-  // Pause when component unmounts
-  useEffect(() => {
-    return () => {
-      if (loopCheckRef.current) cancelAnimationFrame(loopCheckRef.current);
-    };
-  }, []);
 
   // Parse description into instruction sections
   const parseInstructions = (description: string) => {
@@ -94,7 +91,6 @@ export function StepViewer({
       if (match) {
         sections.push({ label: match[1], text: match[2] });
       } else if (line.trim()) {
-        // Fallback for non-labeled lines
         sections.push({ label: "", text: line.trim() });
       }
     }
@@ -105,29 +101,14 @@ export function StepViewer({
   if (!step) return null;
 
   const instructions = parseInstructions(step.description);
-
   const stepDuration = step.endTime - step.startTime;
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <h2 className="font-heading text-lg font-semibold">
           Step-by-Step Breakdown
         </h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">Speed</span>
-          <Slider
-            value={[speed]}
-            onValueChange={(v) => setSpeed(Array.isArray(v) ? v[0] : v)}
-            min={25}
-            max={100}
-            step={25}
-            className="w-28"
-          />
-          <span className="w-10 text-right font-mono text-xs text-muted-foreground">
-            {speed / 100}x
-          </span>
-        </div>
       </div>
 
       {/* Step navigation */}
@@ -174,7 +155,6 @@ export function StepViewer({
                   ref={videoRef}
                   src={videoUrl}
                   preload="auto"
-                  muted
                   playsInline
                   onTimeUpdate={handleTimeUpdate}
                   onPause={() => setIsPlaying(false)}
@@ -194,8 +174,8 @@ export function StepViewer({
                     </div>
                   )}
                 </button>
-                {/* Speed indicator */}
-                {isPlaying && speed !== 100 && (
+                {/* Speed indicator on video */}
+                {isPlaying && (
                   <div className="absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5">
                     <span className="font-mono text-xs text-white">
                       {speed / 100}x
@@ -211,6 +191,28 @@ export function StepViewer({
               </div>
             )}
           </div>
+
+          {/* Speed control under video */}
+          {videoUrl && (
+            <div className="mt-3 flex items-center justify-center gap-1.5">
+              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                Speed
+              </span>
+              {SPEED_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSpeed(opt.value)}
+                  className={`rounded-md px-3 py-1.5 font-mono text-sm font-medium transition-colors ${
+                    speed === opt.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <Separator className="my-4" />
 
