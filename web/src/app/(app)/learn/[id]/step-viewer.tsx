@@ -220,7 +220,7 @@ export function StepViewer({
           {/* Collapsible AI notes */}
           <details className="my-4 rounded-lg border border-border">
             <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold transition-colors hover:bg-muted/50">
-              AI Notes and Analysis
+              Movement Breakdown
             </summary>
             <div className="space-y-3 border-t border-border px-4 py-4">
               {instructions.map((inst, i) =>
