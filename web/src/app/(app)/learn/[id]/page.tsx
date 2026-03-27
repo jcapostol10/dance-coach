@@ -144,7 +144,7 @@ export default async function LearnPage({
 
       {/* Step-by-step viewer */}
       {formattedSteps.length > 0 ? (
-        <StepViewer steps={formattedSteps} />
+        <StepViewer steps={formattedSteps} videoUrl={lesson.videoUrl} />
       ) : (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <p className="text-sm text-muted-foreground">

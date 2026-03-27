@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import {
+  initPoseLandmarker,
+  detectPose,
+  drawPose,
+} from "@/lib/pose-detection";
 
 interface Step {
   id: number;
@@ -17,15 +22,98 @@ interface Step {
   endTime: number;
 }
 
-export function StepViewer({ steps }: { steps: Step[] }) {
+export function StepViewer({
+  steps,
+  videoUrl,
+}: {
+  steps: Step[];
+  videoUrl: string | null;
+}) {
   const [currentStep, setCurrentStep] = useState(0);
   const [speed, setSpeed] = useState(100);
+  const [poseReady, setPoseReady] = useState(false);
+  const [poseLoading, setPoseLoading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const lastRenderedStep = useRef<number>(-1);
 
   const step = steps[currentStep];
+
+  // Init MediaPipe
+  useEffect(() => {
+    if (!videoUrl) return;
+    setPoseLoading(true);
+    initPoseLandmarker()
+      .then(() => setPoseReady(true))
+      .catch((err) => console.error("Pose init failed:", err))
+      .finally(() => setPoseLoading(false));
+  }, [videoUrl]);
+
+  // Seek video + detect pose when step changes
+  const renderPoseForStep = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !poseReady || !step) return;
+    if (video.readyState < 2) return;
+
+    // Use midpoint of the step for the best representative frame
+    const seekTime = (step.startTime + step.endTime) / 2;
+    video.currentTime = seekTime;
+  }, [poseReady, step]);
+
+  // When video seeks to the right time, detect pose
+  const handleSeeked = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !poseReady) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const result = detectPose(video, Math.round(performance.now()));
+    const ctx = canvas.getContext("2d");
+    if (result && ctx) {
+      // Draw video frame first
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Draw skeleton overlay on top
+      drawPose(ctx, result, canvas.width, canvas.height);
+    }
+    lastRenderedStep.current = currentStep;
+  }, [poseReady, currentStep]);
+
+  // Trigger pose render when step changes or pose becomes ready
+  useEffect(() => {
+    if (poseReady && step && lastRenderedStep.current !== currentStep) {
+      renderPoseForStep();
+    }
+  }, [poseReady, step, currentStep, renderPoseForStep]);
+
+  // Handle video loaded
+  const handleLoadedData = useCallback(() => {
+    if (poseReady && step) {
+      renderPoseForStep();
+    }
+  }, [poseReady, step, renderPoseForStep]);
+
   if (!step) return null;
 
   return (
     <div>
+      {/* Hidden video element for pose extraction */}
+      {videoUrl && (
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          crossOrigin="anonymous"
+          preload="auto"
+          muted
+          playsInline
+          onLoadedData={handleLoadedData}
+          onSeeked={handleSeeked}
+          className="hidden"
+        />
+      )}
+
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-heading text-lg font-semibold">
           Step-by-Step Breakdown
@@ -81,13 +169,32 @@ export function StepViewer({ steps }: { steps: Step[] }) {
             {step.description}
           </p>
 
-          {/* Skeleton overlay placeholder */}
-          <div className="relative aspect-video rounded-lg bg-muted">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-xs text-muted-foreground">
-                Pose skeleton overlay will render here
-              </p>
-            </div>
+          {/* Pose skeleton overlay from reference video */}
+          <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+            {videoUrl ? (
+              <>
+                <canvas
+                  ref={canvasRef}
+                  className="h-full w-full object-contain"
+                />
+                {(poseLoading || (!poseReady && videoUrl)) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                    <div className="text-center">
+                      <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      <p className="text-xs text-muted-foreground">
+                        Loading pose detection...
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <p className="text-xs text-muted-foreground">
+                  No video available for pose overlay
+                </p>
+              </div>
+            )}
           </div>
 
           <Separator className="my-4" />
