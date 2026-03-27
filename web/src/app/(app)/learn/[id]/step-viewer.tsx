@@ -29,6 +29,10 @@ export function StepViewer({
   steps: Step[];
   videoUrl: string | null;
 }) {
+  // Proxy the video URL through our API to avoid CORS issues with canvas/MediaPipe
+  const proxiedVideoUrl = videoUrl
+    ? `/api/video-proxy?url=${encodeURIComponent(videoUrl)}`
+    : null;
   const [currentStep, setCurrentStep] = useState(0);
   const [speed, setSpeed] = useState(100);
   const [poseReady, setPoseReady] = useState(false);
@@ -100,11 +104,10 @@ export function StepViewer({
   return (
     <div>
       {/* Hidden video element for pose extraction */}
-      {videoUrl && (
+      {proxiedVideoUrl && (
         <video
           ref={videoRef}
-          src={videoUrl}
-          crossOrigin="anonymous"
+          src={proxiedVideoUrl}
           preload="auto"
           muted
           playsInline
