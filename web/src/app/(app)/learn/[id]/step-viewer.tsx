@@ -217,33 +217,33 @@ export function StepViewer({
             </div>
           )}
 
-          <Separator className="my-4" />
-
-          {/* Detailed movement instructions */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold">How to Execute</h3>
-            {instructions.map((inst, i) =>
-              inst.label ? (
-                <div key={i} className="flex gap-3">
-                  <Badge
-                    variant="outline"
-                    className="mt-0.5 h-fit flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider"
-                  >
-                    {inst.label}
-                  </Badge>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
+          {/* Collapsible AI notes */}
+          <details className="my-4 rounded-lg border border-border">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold transition-colors hover:bg-muted/50">
+              AI Notes and Analysis
+            </summary>
+            <div className="space-y-3 border-t border-border px-4 py-4">
+              {instructions.map((inst, i) =>
+                inst.label ? (
+                  <div key={i} className="flex gap-3">
+                    <Badge
+                      variant="outline"
+                      className="mt-0.5 h-fit flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider"
+                    >
+                      {inst.label}
+                    </Badge>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {inst.text}
+                    </p>
+                  </div>
+                ) : (
+                  <p key={i} className="text-sm leading-relaxed text-muted-foreground">
                     {inst.text}
                   </p>
-                </div>
-              ) : (
-                <p key={i} className="text-sm leading-relaxed text-muted-foreground">
-                  {inst.text}
-                </p>
-              ),
-            )}
-          </div>
-
-          <Separator className="my-4" />
+                ),
+              )}
+            </div>
+          </details>
 
           <div className="flex items-center justify-between">
             <Button
