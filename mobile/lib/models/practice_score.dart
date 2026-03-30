@@ -24,6 +24,7 @@ class StepScore {
 class PracticeScore {
   final String id;
   final String lessonId;
+  final String? lessonTitle;
   final double overallScore;
   final List<StepScore> stepScores;
   final DateTime createdAt;
@@ -31,6 +32,7 @@ class PracticeScore {
   PracticeScore({
     required this.id,
     required this.lessonId,
+    this.lessonTitle,
     required this.overallScore,
     required this.stepScores,
     required this.createdAt,
@@ -40,6 +42,7 @@ class PracticeScore {
     return PracticeScore(
       id: json['id'].toString(),
       lessonId: json['lessonId'].toString(),
+      lessonTitle: json['lessonTitle'] as String?,
       overallScore: (json['overallScore'] as num).toDouble(),
       stepScores: (json['stepScores'] as List<dynamic>?)
               ?.map((s) => StepScore.fromJson(s as Map<String, dynamic>))

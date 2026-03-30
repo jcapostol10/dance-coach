@@ -4,13 +4,17 @@ Compares user's pose keyframes against reference lesson poses
 to produce per-step scores and feedback.
 """
 
+import json
 import math
 import os
+
+import psycopg
 
 from app.models.schemas import (
     ComparisonResult,
     JointFeedback,
     PoseFrame,
+    Landmark,
     StepScore,
 )
 
@@ -180,40 +184,184 @@ def _identify_problem_joints(
     return sorted(problems, key=lambda x: x[1])
 
 
+def _fetch_reference_keyframes(lesson_id: str) -> list[dict]:
+    """Fetch reference step keyframes from the database."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        return []
+
+    with psycopg.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT step_number, name, start_time, end_time, keyframes
+                FROM steps
+                WHERE lesson_id = %s
+                ORDER BY step_number
+                """,
+                (lesson_id,),
+            )
+            rows = cur.fetchall()
+
+    steps = []
+    for row in rows:
+        keyframes_raw = row[4]
+        keyframes = []
+        if keyframes_raw:
+            if isinstance(keyframes_raw, str):
+                keyframes = json.loads(keyframes_raw)
+            else:
+                keyframes = keyframes_raw
+        steps.append({
+            "step_number": row[0],
+            "name": row[1],
+            "start_time": row[2],
+            "end_time": row[3],
+            "keyframes": keyframes,
+        })
+
+    return steps
+
+
+def _keyframes_to_pose_frames(keyframes: list[dict]) -> list[PoseFrame]:
+    """Convert raw keyframe dicts to PoseFrame objects."""
+    frames = []
+    for kf in keyframes:
+        landmarks = [
+            Landmark(x=lm["x"], y=lm["y"], z=lm["z"], visibility=lm.get("visibility", 1.0))
+            for lm in kf.get("landmarks", [])
+        ]
+        frames.append(PoseFrame(time=kf.get("time", 0.0), landmarks=landmarks))
+    return frames
+
+
 async def score_performance(
     lesson_id: str,
     user_keyframes: list[PoseFrame],
 ) -> ComparisonResult:
     """Score user performance against a reference lesson.
 
-    In production, this fetches the reference lesson from the database.
-    For now, returns a placeholder comparison.
+    Fetches reference keyframes from the database, then runs
+    DTW + cosine similarity scoring per step.
     """
-    # TODO: fetch reference lesson from database by lesson_id
-    # For now, return a development placeholder
-    step_scores = [
-        StepScore(
-            step_id=1,
-            score=75.0,
-            timing_score=80.0,
-            form_score=70.0,
-            feedback="Good attempt! Focus on extending your arms fully during this move.",
-            problem_joints=["RIGHT_SHOULDER", "LEFT_ELBOW"],
-            detailed_feedback=[
-                JointFeedback(
-                    joint="RIGHT_SHOULDER",
-                    issue="Shoulder dropping during arm extension",
-                    suggestion="Keep your shoulder level while extending your arm outward.",
-                ),
-                JointFeedback(
-                    joint="LEFT_ELBOW",
-                    issue="Elbow not fully extended",
-                    suggestion="Straighten your left arm completely during the reach.",
-                ),
+    ref_steps = _fetch_reference_keyframes(lesson_id)
+
+    if not ref_steps:
+        # No reference data — return a generic score based on pose consistency
+        return ComparisonResult(
+            overall_score=0.0,
+            steps=[
+                StepScore(
+                    step_id=1,
+                    score=0.0,
+                    timing_score=0.0,
+                    form_score=0.0,
+                    feedback="No reference keyframes found for this lesson. The lesson may not have been fully analyzed.",
+                    problem_joints=[],
+                    detailed_feedback=[],
+                )
             ],
         )
-    ]
 
-    overall = sum(s.score for s in step_scores) / len(step_scores) if step_scores else 0
+    step_scores = []
+    for step in ref_steps:
+        ref_kf = step["keyframes"]
+        if not ref_kf:
+            step_scores.append(
+                StepScore(
+                    step_id=step["step_number"],
+                    score=0.0,
+                    timing_score=0.0,
+                    form_score=0.0,
+                    feedback=f"No reference keyframes for step '{step['name']}'.",
+                    problem_joints=[],
+                    detailed_feedback=[],
+                )
+            )
+            continue
 
-    return ComparisonResult(overall_score=overall, steps=step_scores)
+        ref_frames = _keyframes_to_pose_frames(ref_kf)
+
+        # Filter user keyframes to this step's time range
+        step_user_frames = [
+            f for f in user_keyframes
+            if step["start_time"] <= f.time <= step["end_time"]
+        ]
+
+        if not step_user_frames:
+            step_scores.append(
+                StepScore(
+                    step_id=step["step_number"],
+                    score=0.0,
+                    timing_score=0.0,
+                    form_score=0.0,
+                    feedback=f"No user frames captured during step '{step['name']}'. Try recording for the full duration.",
+                    problem_joints=[],
+                    detailed_feedback=[],
+                )
+            )
+            continue
+
+        # DTW sequence-level score
+        dtw = _dtw_score(ref_frames, step_user_frames)
+
+        # Per-joint analysis
+        joint_scores = _per_joint_scores(ref_frames, step_user_frames)
+        problems = _identify_problem_joints(joint_scores)
+
+        # Form score = average joint similarity * 100
+        form_score = (
+            sum(joint_scores.values()) / len(joint_scores) * 100
+            if joint_scores
+            else 0.0
+        )
+
+        # Timing score based on frame count ratio
+        expected_frames = len(ref_frames)
+        actual_frames = len(step_user_frames)
+        timing_ratio = min(actual_frames, expected_frames) / max(
+            actual_frames, expected_frames, 1
+        )
+        timing_score = timing_ratio * 100
+
+        # Overall step score: weighted blend
+        score = 0.5 * dtw + 0.3 * form_score + 0.2 * timing_score
+
+        # Build feedback
+        problem_joint_names = [
+            LANDMARK_NAMES[j] if j < len(LANDMARK_NAMES) else f"joint_{j}"
+            for j, _ in problems[:3]
+        ]
+
+        detailed = []
+        for j, s in problems[:3]:
+            name = LANDMARK_NAMES[j] if j < len(LANDMARK_NAMES) else f"joint_{j}"
+            detailed.append(
+                JointFeedback(
+                    joint=name,
+                    issue=f"Similarity score {s:.0%} — below target",
+                    suggestion=f"Focus on matching the reference position for your {name.lower().replace('_', ' ')}.",
+                )
+            )
+
+        feedback_text = f"Step '{step['name']}': score {score:.0f}/100."
+        if problem_joint_names:
+            feedback_text += f" Work on: {', '.join(j.lower().replace('_', ' ') for j in problem_joint_names)}."
+
+        step_scores.append(
+            StepScore(
+                step_id=step["step_number"],
+                score=round(score, 1),
+                timing_score=round(timing_score, 1),
+                form_score=round(form_score, 1),
+                feedback=feedback_text,
+                problem_joints=problem_joint_names,
+                detailed_feedback=detailed,
+            )
+        )
+
+    overall = (
+        sum(s.score for s in step_scores) / len(step_scores) if step_scores else 0.0
+    )
+
+    return ComparisonResult(overall_score=round(overall, 1), steps=step_scores)

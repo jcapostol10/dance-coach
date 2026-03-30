@@ -380,7 +380,10 @@ class _LessonScreenState extends State<LessonScreen> {
                             min: 0.25,
                             max: 1.0,
                             divisions: 3,
-                            onChanged: (v) => setState(() => _speed = v),
+                            onChanged: (v) {
+                              setState(() => _speed = v);
+                              _videoController?.setPlaybackSpeed(v);
+                            },
                           ),
                         ),
                       ],

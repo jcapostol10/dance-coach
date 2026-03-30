@@ -6,6 +6,20 @@ import '../models/practice_score.dart';
 class ApiService {
   static const String _baseUrl = 'https://dance-coach.vercel.app/api';
 
+  static String? _authEmail;
+
+  void setAuthEmail(String? email) {
+    _authEmail = email;
+  }
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (_authEmail != null) {
+      headers['X-User-Email'] = _authEmail!;
+    }
+    return headers;
+  }
+
   Future<List<Lesson>> getLessons({String? style, String? difficulty}) async {
     final params = <String, String>{};
     if (style != null) params['style'] = style;
@@ -33,16 +47,14 @@ class ApiService {
 
   Future<PracticeScore> submitFeedback({
     required String lessonId,
-    required String userId,
     required List<Map<String, dynamic>> keyframes,
   }) async {
     final response = await http.post(
       Uri.parse('$_baseUrl/feedback'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _headers,
       body: json.encode({
         'lessonId': lessonId,
-        'userId': userId,
-        'keyframes': keyframes,
+        'userKeyframes': keyframes,
       }),
     );
 
@@ -55,7 +67,8 @@ class ApiService {
 
   Future<List<PracticeScore>> getScores(String userId) async {
     final response = await http.get(
-      Uri.parse('$_baseUrl/feedback?userId=$userId'),
+      Uri.parse('$_baseUrl/feedback'),
+      headers: _headers,
     );
 
     if (response.statusCode == 200) {

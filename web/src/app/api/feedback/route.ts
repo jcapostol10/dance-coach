@@ -1,14 +1,50 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { lessons, steps, practiceScores } from "@/lib/db/schema";
+import { users, lessons, steps, practiceScores } from "@/lib/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import { computeScores, generateFeedback } from "@/lib/scoring";
+import { auth } from "@/lib/auth";
 
 export const maxDuration = 60;
 
+/** Ensure a user row exists for the current session, return the DB user ID.
+ *  Checks NextAuth session first, then falls back to X-User-Email header (mobile). */
+async function getOrCreateUserId(
+  request?: Request
+): Promise<string | null> {
+  const session = await auth();
+  let email = session?.user?.email ?? null;
+
+  // Fallback: mobile clients send X-User-Email header
+  if (!email && request) {
+    email = request.headers.get("x-user-email");
+  }
+
+  if (!email) return null;
+  const existing = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0].id;
+
+  const [created] = await db
+    .insert(users)
+    .values({
+      externalId: email,
+      email,
+      name: session?.user?.name || null,
+      avatarUrl: session?.user?.image || null,
+    })
+    .returning({ id: users.id });
+
+  return created.id;
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
-  const { lessonId, userKeyframes, userId } = body;
+  const { lessonId, userKeyframes } = body;
 
   if (!lessonId || !userKeyframes || !Array.isArray(userKeyframes)) {
     return NextResponse.json(
@@ -71,7 +107,8 @@ export async function POST(request: Request) {
   try {
     const result = await generateFeedback(stepMetrics, apiKey);
 
-    // Store score if userId provided
+    // Auto-create user from session and store score
+    const userId = await getOrCreateUserId(request);
     if (userId) {
       await db.insert(practiceScores).values({
         userId,
@@ -104,28 +141,28 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const userId = url.searchParams.get("userId");
-  const lessonId = url.searchParams.get("lessonId");
-
+  const userId = await getOrCreateUserId(request);
   if (!userId) {
     return NextResponse.json(
-      { error: "userId is required" },
-      { status: 400 }
+      { error: "Not authenticated" },
+      { status: 401 }
     );
   }
 
-  let query = db
-    .select()
+  const scores = await db
+    .select({
+      id: practiceScores.id,
+      lessonId: practiceScores.lessonId,
+      overallScore: practiceScores.overallScore,
+      stepScores: practiceScores.stepScores,
+      createdAt: practiceScores.createdAt,
+      lessonTitle: lessons.title,
+    })
     .from(practiceScores)
+    .innerJoin(lessons, eq(practiceScores.lessonId, lessons.id))
     .where(eq(practiceScores.userId, userId))
     .orderBy(desc(practiceScores.createdAt))
-    .$dynamic();
+    .limit(20);
 
-  if (lessonId) {
-    query = query.where(eq(practiceScores.lessonId, lessonId));
-  }
-
-  const scores = await query;
   return NextResponse.json(scores);
 }

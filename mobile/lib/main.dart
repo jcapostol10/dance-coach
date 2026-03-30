@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
+import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/library/library_screen.dart';
@@ -68,6 +69,7 @@ class AuthGate extends StatelessWidget {
     }
 
     if (auth.isSignedIn) {
+      ApiService().setAuthEmail(auth.email);
       return const MainShell();
     }
 
