@@ -104,7 +104,7 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('DanceCoach AI'),
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         actions: [
           if (auth.isSignedIn)
             PopupMenuButton<String>(
@@ -162,7 +162,7 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         indicatorColor: Theme.of(context).colorScheme.primary.withAlpha(51),
         destinations: [
           const NavigationDestination(

@@ -1,22 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StepViewer } from "./step-viewer";
 import { VideoPlayer } from "./video-player";
 import { DeleteLessonButton } from "./delete-lesson-button";
+import { EditableTitle } from "./editable-title";
+import { EditableStyle } from "./editable-style";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getDownloadUrl } from "@/lib/storage";
-
-const DIFFICULTY_COLORS: Record<string, string> = {
-  Beginner: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  Intermediate: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  Advanced: "bg-red-500/10 text-red-400 border-red-500/20",
-};
 
 export const dynamic = "force-dynamic";
 
@@ -69,58 +64,50 @@ export default async function LearnPage({
   }));
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto max-w-5xl px-4 py-10">
+      <div className="mb-8 flex items-center justify-between">
         <div>
           <Link
             href="/library"
-            className="text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:text-foreground"
           >
-            ← Back to Library
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Library
           </Link>
-          <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight">
-            {lesson.title}
-          </h1>
-          <div className="mt-2 flex items-center gap-2">
-            {lesson.difficulty && (
-              <Badge
-                variant="outline"
-                className={DIFFICULTY_COLORS[lesson.difficulty] || ""}
-              >
-                {lesson.difficulty}
-              </Badge>
-            )}
-            {lesson.style && (
-              <Badge variant="outline" className="border-border/40 text-foreground/70">
-                {lesson.style}
-              </Badge>
-            )}
-            {lesson.bpm && (
-              <span className="text-xs text-muted-foreground font-mono">
-                {Math.round(lesson.bpm)} BPM
-              </span>
-            )}
+          <div className="mt-3">
+            <EditableTitle lessonId={id} initialTitle={lesson.title} />
           </div>
+          <EditableStyle
+            lessonId={id}
+            initialStyle={lesson.style}
+            difficulty={lesson.difficulty}
+            bpm={lesson.bpm}
+          />
         </div>
         <div className="flex items-center gap-3">
           <DeleteLessonButton lessonId={id} />
           <Link href={`/practice/${id}`}>
-            <Button>Practice This Dance</Button>
+            <Button className="card-shadow transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:elevated-shadow">
+              Practice This Dance
+            </Button>
           </Link>
         </div>
       </div>
 
-      <Separator className="mb-6" />
+      <Separator className="mb-8" />
 
       {/* Video player */}
-      <Card className="mb-6 overflow-hidden">
+      <Card className="mb-8 overflow-hidden card-shadow">
         {lesson.videoUrl ? (
           <VideoPlayer src={lesson.videoUrl} />
         ) : (
           <div className="relative aspect-video bg-muted">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 card-shadow">
                   <svg
                     className="h-8 w-8 text-primary"
                     fill="currentColor"
@@ -142,11 +129,11 @@ export default async function LearnPage({
       {formattedSteps.length > 0 ? (
         <StepViewer steps={formattedSteps} videoUrl={lesson.videoUrl} />
       ) : (
-        <div className="rounded-lg border border-dashed border-border py-12 text-center">
+        <div className="rounded-xl border border-dashed border-border/60 bg-surface-elevated/50 py-12 text-center">
           <p className="text-sm text-muted-foreground">
             {lesson.analyzedAt
               ? "No steps were detected for this video."
-              : "This video hasn't been analyzed yet. Upload it again or trigger analysis."}
+              : "This video hasn\u2019t been analyzed yet. Upload it again or trigger analysis."}
           </p>
         </div>
       )}

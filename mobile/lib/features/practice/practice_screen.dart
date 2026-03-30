@@ -85,16 +85,16 @@ class _PracticeScreenState extends State<PracticeScreen> {
         Container(
           height: 300,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
+            color: const Color(0xFF1A1A22),
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.videocam_outlined, size: 48, color: Color(0xFF555577)),
+                Icon(Icons.videocam_outlined, size: 48, color: Color(0xFF8888A0)),
                 SizedBox(height: 12),
-                Text('Position yourself so your full body is visible', style: TextStyle(fontSize: 13, color: Color(0xFF555577))),
+                Text('Position yourself so your full body is visible', style: TextStyle(fontSize: 13, color: Color(0xFF8888A0))),
               ],
             ),
           ),

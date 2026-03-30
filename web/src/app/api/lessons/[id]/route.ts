@@ -47,6 +47,53 @@ export async function GET(
   });
 }
 
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = await request.json();
+  const { title, style } = body;
+
+  const updates: Record<string, string> = {};
+
+  if (title !== undefined) {
+    if (typeof title !== "string" || title.trim().length === 0) {
+      return NextResponse.json({ error: "Title cannot be empty" }, { status: 400 });
+    }
+    updates.title = title.trim();
+  }
+
+  if (style !== undefined) {
+    if (typeof style !== "string" || style.trim().length === 0) {
+      return NextResponse.json({ error: "Style cannot be empty" }, { status: 400 });
+    }
+    updates.style = style.trim();
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+
+  const lesson = await db
+    .select()
+    .from(lessons)
+    .where(eq(lessons.id, id))
+    .limit(1);
+
+  if (lesson.length === 0) {
+    return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
+  }
+
+  const [updated] = await db
+    .update(lessons)
+    .set(updates)
+    .where(eq(lessons.id, id))
+    .returning();
+
+  return NextResponse.json(updated);
+}
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }

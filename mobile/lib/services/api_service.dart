@@ -65,6 +65,24 @@ class ApiService {
     throw Exception('Failed to load scores: ${response.statusCode}');
   }
 
+  Future<Lesson> updateLesson(String id, {String? title, String? style}) async {
+    final body = <String, dynamic>{};
+    if (title != null) body['title'] = title;
+    if (style != null) body['style'] = style;
+
+    final response = await http.patch(
+      Uri.parse('$_baseUrl/lessons/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(body),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return Lesson.fromJson(data);
+    }
+    throw Exception('Failed to update lesson: ${response.statusCode}');
+  }
+
   Future<void> deleteLesson(String id) async {
     final response = await http.delete(Uri.parse('$_baseUrl/lessons/$id'));
 

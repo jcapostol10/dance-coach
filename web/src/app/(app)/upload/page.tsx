@@ -279,49 +279,49 @@ export default function UploadPage() {
   const isWorking = state === "uploading" || state === "analyzing";
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Upload Dance Video</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <div className="mb-8">
+        <h1 className="font-heading text-3xl font-bold tracking-tight">Upload Dance Video</h1>
+        <p className="mt-2 text-muted-foreground">
           Upload a dance video for AI analysis — beat detection, pose extraction, and step-by-step breakdown.
         </p>
       </div>
 
       {state === "done" && result ? (
-        <Card className="border-border bg-card">
+        <Card className="card-shadow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="text-green-400">Analysis Complete</span>
-              <Badge variant="outline">{result.bpm.toFixed(0)} BPM</Badge>
+              <span className="text-emerald-400">Analysis Complete</span>
+              <Badge variant="outline" className="font-mono">{result.bpm.toFixed(0)} BPM</Badge>
               <Badge variant="outline">{result.steps.length} steps</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border p-3 text-center">
-                <p className="text-2xl font-bold">{result.bpm.toFixed(0)}</p>
+              <div className="rounded-xl border border-border/60 bg-surface-elevated p-4 text-center">
+                <p className="font-heading text-2xl font-bold">{result.bpm.toFixed(0)}</p>
                 <p className="text-xs text-muted-foreground">BPM</p>
               </div>
-              <div className="rounded-lg border border-border p-3 text-center">
-                <p className="text-2xl font-bold">{result.steps.length}</p>
+              <div className="rounded-xl border border-border/60 bg-surface-elevated p-4 text-center">
+                <p className="font-heading text-2xl font-bold">{result.steps.length}</p>
                 <p className="text-xs text-muted-foreground">Steps</p>
               </div>
-              <div className="rounded-lg border border-border p-3 text-center">
-                <p className="text-2xl font-bold">{result.duration.toFixed(0)}s</p>
+              <div className="rounded-xl border border-border/60 bg-surface-elevated p-4 text-center">
+                <p className="font-heading text-2xl font-bold">{result.duration.toFixed(0)}s</p>
                 <p className="text-xs text-muted-foreground">Duration</p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <h3 className="text-sm font-medium">Detected Steps</h3>
+              <h3 className="font-heading text-sm font-semibold">Detected Steps</h3>
               {result.steps.map((step, i) => (
-                <div key={i} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
+                <div key={i} className="flex items-start gap-3 rounded-xl border border-border/60 bg-surface-elevated/50 p-3 transition-colors duration-150 hover:bg-surface-elevated">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary card-shadow">
                     {i + 1}
                   </span>
                   <div>
                     <p className="text-sm font-medium">{step.name}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-xs text-muted-foreground font-mono tabular-nums">
                       {step.start_time.toFixed(1)}s — {step.end_time.toFixed(1)}s
                     </p>
                   </div>
@@ -329,11 +329,11 @@ export default function UploadPage() {
               ))}
             </div>
 
-            <Button onClick={reset} className="w-full">Upload Another</Button>
+            <Button onClick={reset} className="w-full card-shadow">Upload Another</Button>
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-border bg-card">
+        <Card className="card-shadow">
           <CardContent className="space-y-5 pt-6">
             {/* Drop zone */}
             <div
@@ -369,7 +369,7 @@ export default function UploadPage() {
                     Drag & drop a dance video here
                   </p>
                   <p className="text-xs text-muted-foreground">or</p>
-                  <label className="mt-2 cursor-pointer rounded-md bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20">
+                  <label className="mt-2 cursor-pointer rounded-lg bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors duration-150 hover:bg-primary/20 focus-visible:bg-primary/20 active:bg-primary/25">
                     Browse files
                     <input
                       type="file"
