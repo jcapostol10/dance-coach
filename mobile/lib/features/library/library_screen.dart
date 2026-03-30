@@ -121,10 +121,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  ...grouped[style]!.map((lesson) => _LessonCard(
-                    lesson: lesson,
-                    onUpdated: _refresh,
-                  )),
+                  ...grouped[style]!.map((lesson) => _LessonCard(lesson: lesson)),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -155,129 +152,13 @@ class _Logo extends StatelessWidget {
   }
 }
 
-const _allStyles = [
-  'Hip-Hop', 'Salsa', 'Contemporary', 'K-Pop', 'Breaking', 'House',
-  'Jazz', 'Ballet', 'Popping', 'Locking', 'Krumping', 'Waacking',
-  'Bachata', 'Merengue', 'Cumbia', 'Cha-Cha', 'Samba', 'Reggaeton',
-  'Waltz', 'Tango', 'Foxtrot', 'Shuffling', 'Modern', 'Lyrical',
-  'Tap', 'Bollywood', 'Flamenco', 'Afrobeats', 'Dancehall',
-  'Freestyle', 'Choreography', 'Line Dancing',
-];
-
-class _LessonCard extends StatefulWidget {
+class _LessonCard extends StatelessWidget {
   final Lesson lesson;
-  final VoidCallback onUpdated;
 
-  const _LessonCard({required this.lesson, required this.onUpdated});
-
-  @override
-  State<_LessonCard> createState() => _LessonCardState();
-}
-
-class _LessonCardState extends State<_LessonCard> {
-  late String _title;
-  late String? _style;
-
-  @override
-  void initState() {
-    super.initState();
-    _title = widget.lesson.title;
-    _style = widget.lesson.style;
-  }
-
-  Future<void> _editTitle() async {
-    final controller = TextEditingController(text: _title);
-    final newTitle = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Title'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Title',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (newTitle == null || newTitle.isEmpty || newTitle == _title || !mounted) return;
-
-    try {
-      await ApiService().updateLesson(widget.lesson.id, title: newTitle);
-      setState(() => _title = newTitle);
-      widget.onUpdated();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update title: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _editStyle() async {
-    final newStyle = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        String selected = _style ?? _allStyles.first;
-        return AlertDialog(
-          title: const Text('Change Style'),
-          content: StatefulBuilder(
-            builder: (context, setDialogState) => DropdownButtonFormField<String>(
-              initialValue: _allStyles.contains(selected) ? selected : _allStyles.first,
-              decoration: const InputDecoration(
-                labelText: 'Style',
-                border: OutlineInputBorder(),
-              ),
-              items: _allStyles.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setDialogState(() => selected = v!),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, selected),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (newStyle == null || newStyle == _style || !mounted) return;
-
-    try {
-      await ApiService().updateLesson(widget.lesson.id, style: newStyle);
-      setState(() => _style = newStyle);
-      widget.onUpdated();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update style: $e')),
-        );
-      }
-    }
-  }
+  const _LessonCard({required this.lesson});
 
   @override
   Widget build(BuildContext context) {
-    final lesson = widget.lesson;
     final diffColor = lesson.difficulty != null
         ? (AppTheme.difficultyColors[lesson.difficulty] ?? Colors.grey)
         : Colors.grey;
@@ -307,7 +188,7 @@ class _LessonCardState extends State<_LessonCard> {
                 child: lesson.thumbnailUrl == null
                     ? Center(
                         child: Text(
-                          _title.split(' ').take(2).join(' '),
+                          lesson.title.split(' ').take(2).join(' '),
                           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w300, color: Color(0xFF8888A0)),
                         ),
                       )
@@ -323,18 +204,10 @@ class _LessonCardState extends State<_LessonCard> {
                       children: [
                         if (lesson.difficulty != null)
                           _Badge(label: lesson.difficulty!, color: diffColor),
-                        if (lesson.difficulty != null && _style != null)
+                        if (lesson.difficulty != null && lesson.style != null)
                           const SizedBox(width: 8),
-                        if (_style != null)
-                          GestureDetector(
-                            onTap: _editStyle,
-                            child: _Badge(label: _style!, color: Colors.white70),
-                          )
-                        else
-                          GestureDetector(
-                            onTap: _editStyle,
-                            child: const _Badge(label: '+ Add style', color: Colors.white38),
-                          ),
+                        if (lesson.style != null)
+                          _Badge(label: lesson.style!, color: Colors.white70),
                         if (!lesson.isAnalyzed) ...[
                           const SizedBox(width: 8),
                           _Badge(label: 'Not analyzed', color: Colors.orange),
@@ -342,24 +215,7 @@ class _LessonCardState extends State<_LessonCard> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(_title, style: Theme.of(context).textTheme.titleMedium),
-                        ),
-                        GestureDetector(
-                          onTap: _editTitle,
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.edit_outlined,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    Text(lesson.title, style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 8),
                     Text(
                       [
