@@ -19,6 +19,7 @@ class _LessonScreenState extends State<LessonScreen> {
   double _speed = 1.0;
   VideoPlayerController? _videoController;
   bool _deleting = false;
+  bool _descriptionExpanded = false;
 
   @override
   void initState() {
@@ -394,7 +395,7 @@ class _LessonScreenState extends State<LessonScreen> {
 
                 // Step tabs
                 SizedBox(
-                  height: 56,
+                  height: 72,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: steps.length,
@@ -403,7 +404,10 @@ class _LessonScreenState extends State<LessonScreen> {
                       final s = steps[i];
                       final isActive = i == _currentStep;
                       return GestureDetector(
-                        onTap: () => setState(() => _currentStep = i),
+                        onTap: () => setState(() {
+                          _currentStep = i;
+                          _descriptionExpanded = false;
+                        }),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -496,12 +500,45 @@ class _LessonScreenState extends State<LessonScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Text(
-                              step.description,
-                              style: Theme.of(context).textTheme.bodyMedium,
+                            const SizedBox(height: 4),
+                            // Collapsible movement breakdown
+                            InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () => setState(() => _descriptionExpanded = !_descriptionExpanded),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'Movement Breakdown',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    AnimatedRotation(
+                                      turns: _descriptionExpanded ? 0.5 : 0,
+                                      duration: const Duration(milliseconds: 200),
+                                      child: const Icon(Icons.keyboard_arrow_down, size: 20, color: Color(0xFF8888A0)),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 16),
+                            AnimatedCrossFade(
+                              firstChild: const SizedBox.shrink(),
+                              secondChild: Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  step.description,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                              crossFadeState: _descriptionExpanded
+                                  ? CrossFadeState.showSecond
+                                  : CrossFadeState.showFirst,
+                              duration: const Duration(milliseconds: 200),
+                            ),
                             const Divider(),
                             const SizedBox(height: 8),
 
