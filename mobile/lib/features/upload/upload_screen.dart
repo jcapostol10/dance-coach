@@ -12,7 +12,7 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  static const _baseUrl = 'http://10.0.2.2:3000/api';
+  static const _baseUrl = 'https://dance-coach.vercel.app/api';
 
   File? _videoFile;
   String _title = '';
@@ -104,13 +104,17 @@ class _UploadScreenState extends State<UploadScreen> {
 
       if (lessonRes.statusCode != 201) throw Exception('Failed to create lesson');
 
-      // Step 4: Analyze
-      setState(() => _status = 'AI is analyzing — detecting beats, poses, moves...');
+      // Step 4: Analyze (large videos can take 2-3 min — set 5-min timeout)
+      setState(() => _status = 'Uploading video to AI service...');
+      await Future.delayed(const Duration(seconds: 3));
+      setState(() => _status = 'AI is analyzing dance movements — this may take 1-3 minutes...');
       final analyzeRes = await http.post(
         Uri.parse('$_baseUrl/analyze'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'lessonId': uploadData['lessonId']}),
-      );
+      ).timeout(const Duration(minutes: 5), onTimeout: () {
+        throw Exception('Analysis timed out — the video may be too large. Try a shorter clip.');
+      });
 
       if (analyzeRes.statusCode != 200) {
         final err = json.decode(analyzeRes.body);
