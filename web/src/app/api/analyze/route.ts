@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/lib/db";
 import { lessons, steps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getDownloadUrl } from "@/lib/storage";
+import { cleanupLesson } from "@/lib/lesson-cleanup";
 
 export const maxDuration = 300;
 
@@ -152,6 +154,7 @@ export async function POST(request: Request) {
           .limit(1);
 
         if (lesson.length === 0) {
+          // Lesson not found — nothing to clean up
           send("error", { error: "Lesson not found" });
           controller.close();
           return;
@@ -171,6 +174,7 @@ export async function POST(request: Request) {
         const videoResponse = await fetch(videoUrl);
         if (!videoResponse.ok) {
           send("error", { error: `Failed to fetch video (${videoResponse.status})` });
+          after(() => cleanupLesson(lessonId));
           controller.close();
           return;
         }
@@ -185,6 +189,7 @@ export async function POST(request: Request) {
           fileUri = await uploadToGeminiFiles(videoBuffer, mimeType);
         } catch (err) {
           send("error", { error: err instanceof Error ? err.message : "File upload failed" });
+          after(() => cleanupLesson(lessonId));
           controller.close();
           return;
         }
@@ -210,6 +215,7 @@ export async function POST(request: Request) {
           analysis = JSON.parse(jsonStr);
         } catch {
           send("error", { error: "AI returned invalid response. Please try again." });
+          after(() => cleanupLesson(lessonId));
           controller.close();
           return;
         }
@@ -241,6 +247,7 @@ export async function POST(request: Request) {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Analysis failed";
         send("error", { error: message });
+        after(() => cleanupLesson(lessonId));
         controller.close();
       }
     },
@@ -278,6 +285,7 @@ async function handleAnalysis(lessonId: string) {
 
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
+      after(() => cleanupLesson(lessonId));
       return NextResponse.json(
         { error: `Failed to fetch video (${videoResponse.status})` },
         { status: 500 },
@@ -304,6 +312,7 @@ async function handleAnalysis(lessonId: string) {
     try {
       analysis = JSON.parse(jsonStr);
     } catch {
+      after(() => cleanupLesson(lessonId));
       return NextResponse.json(
         { error: `AI returned invalid JSON: ${jsonStr.substring(0, 200)}` },
         { status: 500 },
@@ -332,6 +341,7 @@ async function handleAnalysis(lessonId: string) {
     return NextResponse.json({ success: true, lesson: analysis });
   } catch (err) {
     console.error("Analysis error:", err);
+    after(() => cleanupLesson(lessonId));
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Analysis failed" },
       { status: 500 },
