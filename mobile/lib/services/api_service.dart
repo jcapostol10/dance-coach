@@ -4,7 +4,8 @@ import '../models/lesson.dart';
 import '../models/practice_score.dart';
 
 class ApiService {
-  static const String _baseUrl = 'https://dance-coach.vercel.app/api';
+  static const String baseUrl = 'https://dance-coach.vercel.app/api';
+  static const String _baseUrl = baseUrl;
 
   static String? _authEmail;
 
