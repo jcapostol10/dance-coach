@@ -16,31 +16,88 @@ class LessonScreen extends StatefulWidget {
 class _LessonScreenState extends State<LessonScreen> {
   late Future<models.Lesson> _lessonFuture;
   int _currentStep = 0;
-  double _speed = 1.0;
+  double _speed = 0.5;
   VideoPlayerController? _videoController;
   bool _deleting = false;
   bool _descriptionExpanded = false;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
     _lessonFuture = ApiService().getLesson(widget.lessonId);
     _lessonFuture.then((lesson) {
+      _cachedSteps = lesson.steps;
       if (lesson.videoUrl != null && lesson.videoUrl!.isNotEmpty) {
-        _initVideo(lesson.videoUrl!);
+        _initVideo(lesson.videoUrl!, lesson.steps);
       }
     });
   }
 
-  void _initVideo(String url) {
+  void _initVideo(String url, List<models.Step> steps) {
     _videoController = VideoPlayerController.networkUrl(Uri.parse(url))
       ..initialize().then((_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        _videoController!.setPlaybackSpeed(_speed);
+        _videoController!.addListener(_onVideoTick);
+        if (steps.isNotEmpty) {
+          _videoController!.seekTo(
+            Duration(milliseconds: (steps[0].startTime * 1000).round()),
+          );
+        }
+        setState(() {});
       });
+  }
+
+  void _onVideoTick() {
+    final ctrl = _videoController;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    // Keep _isPlaying in sync
+    final playing = ctrl.value.isPlaying;
+    if (playing != _isPlaying) setState(() => _isPlaying = playing);
+
+    // Loop within current step boundaries
+    final steps = _cachedSteps;
+    if (steps == null || _currentStep >= steps.length) return;
+    final step = steps[_currentStep];
+    final pos = ctrl.value.position.inMilliseconds / 1000.0;
+    if (pos >= step.endTime) {
+      ctrl.seekTo(Duration(milliseconds: (step.startTime * 1000).round()));
+    }
+  }
+
+  List<models.Step>? _cachedSteps;
+
+  void _seekToStep(List<models.Step> steps, int index) {
+    _cachedSteps = steps;
+    final ctrl = _videoController;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    final step = steps[index];
+    ctrl.pause();
+    ctrl.seekTo(Duration(milliseconds: (step.startTime * 1000).round()));
+    setState(() => _isPlaying = false);
+  }
+
+  void _togglePlay(List<models.Step> steps) {
+    final ctrl = _videoController;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    if (ctrl.value.isPlaying) {
+      ctrl.pause();
+    } else {
+      final step = steps[_currentStep];
+      final pos = ctrl.value.position.inMilliseconds / 1000.0;
+      if (pos < step.startTime || pos >= step.endTime) {
+        ctrl.seekTo(Duration(milliseconds: (step.startTime * 1000).round()));
+      }
+      ctrl.setPlaybackSpeed(_speed);
+      ctrl.play();
+    }
   }
 
   @override
   void dispose() {
+    _videoController?.removeListener(_onVideoTick);
     _videoController?.dispose();
     super.dispose();
   }
@@ -285,47 +342,46 @@ class _LessonScreenState extends State<LessonScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Video player
+              // Video player (full lesson — seek handled per-step below)
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: AspectRatio(
-                  aspectRatio:
-                      _videoController != null &&
-                          _videoController!.value.isInitialized
+                  aspectRatio: _videoController?.value.isInitialized == true
                       ? _videoController!.value.aspectRatio
                       : 16 / 9,
-                  child:
-                      _videoController != null &&
-                          _videoController!.value.isInitialized
+                  child: _videoController?.value.isInitialized == true
                       ? Stack(
                           alignment: Alignment.center,
                           children: [
                             VideoPlayer(_videoController!),
                             GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _videoController!.value.isPlaying
-                                      ? _videoController!.pause()
-                                      : _videoController!.play();
-                                });
-                              },
+                              onTap: () => _togglePlay(steps),
                               child: AnimatedOpacity(
-                                opacity: _videoController!.value.isPlaying
-                                    ? 0.0
-                                    : 1.0,
+                                opacity: _isPlaying ? 0.0 : 1.0,
                                 duration: const Duration(milliseconds: 200),
                                 child: Container(
                                   color: Colors.black38,
                                   child: const Center(
-                                    child: Icon(
-                                      Icons.play_arrow,
-                                      size: 64,
-                                      color: Colors.white,
-                                    ),
+                                    child: Icon(Icons.play_arrow, size: 64, color: Colors.white),
                                   ),
                                 ),
                               ),
                             ),
+                            if (_isPlaying)
+                              Positioned(
+                                top: 8, right: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${_speed}x',
+                                    style: const TextStyle(fontSize: 11, color: Colors.white, fontFamily: 'monospace'),
+                                  ),
+                                ),
+                              ),
                           ],
                         )
                       : Container(
@@ -336,25 +392,60 @@ class _LessonScreenState extends State<LessonScreen> {
                                 : const Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(
-                                        Icons.videocam_off,
-                                        size: 48,
-                                        color: Color(0xFF8888A0),
-                                      ),
+                                      Icon(Icons.videocam_off, size: 48, color: Color(0xFF8888A0)),
                                       SizedBox(height: 8),
-                                      Text(
-                                        'No video available',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF8888A0),
-                                        ),
-                                      ),
+                                      Text('No video available', style: TextStyle(fontSize: 12, color: Color(0xFF8888A0))),
                                     ],
                                   ),
                           ),
                         ),
                 ),
               ),
+              // Speed buttons
+              if (lesson.videoUrl != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('Speed', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF8888A0))),
+                    const SizedBox(width: 12),
+                    for (final opt in const [
+                      (value: 0.25, label: '0.25x'),
+                      (value: 0.5,  label: '0.5x'),
+                      (value: 0.75, label: '0.75x'),
+                      (value: 1.0,  label: '1x'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _speed = opt.value);
+                            _videoController?.setPlaybackSpeed(opt.value);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _speed == opt.value
+                                  ? Theme.of(context).colorScheme.primary
+                                  : const Color(0xFF1A1A22),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              opt.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w600,
+                                color: _speed == opt.value ? Colors.white : const Color(0xFF8888A0),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 24),
 
               // Steps section
@@ -404,10 +495,13 @@ class _LessonScreenState extends State<LessonScreen> {
                       final s = steps[i];
                       final isActive = i == _currentStep;
                       return GestureDetector(
-                        onTap: () => setState(() {
-                          _currentStep = i;
-                          _descriptionExpanded = false;
-                        }),
+                        onTap: () {
+                          setState(() {
+                            _currentStep = i;
+                            _descriptionExpanded = false;
+                          });
+                          _seekToStep(steps, i);
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
