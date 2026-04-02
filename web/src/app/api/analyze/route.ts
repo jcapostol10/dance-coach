@@ -5,9 +5,11 @@ import { lessons, steps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getDownloadUrl } from "@/lib/storage";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const FILES_API_BASE = "https://generativelanguage.googleapis.com";
 
 const ANALYSIS_PROMPT = `You are a dance instructor AI. Analyze this dance video and return a JSON object with:
 
@@ -39,6 +41,83 @@ CRITICAL RULES:
 IMPORTANT: Return ONLY valid JSON, no markdown, no code fences. Each description should be a single string with newlines (\\n) between the labeled sections. Example format:
 {"bpm":120,"beats":[0.5,1.0,1.5],"duration":30,"steps":[{"id":1,"name":"Step Touch","description":"**Arms & Hands:** Extend both arms to shoulder height...\\n**Core & Torso:** Keep your torso upright...\\n**Legs & Feet:** Step your right foot out to the side...\\n**Weight & Stance:** Shift your weight fully onto the stepping foot...\\n**Timing:** Step on beat 1, touch on beat 2","start_time":0,"end_time":5,"start_beat":1,"end_beat":10}]}`;
 
+/**
+ * Upload video buffer to Gemini Files API via multipart HTTP — no filesystem writes.
+ * Returns the file URI to use in generateContent.
+ */
+async function uploadToGeminiFiles(buffer: Buffer, mimeType: string): Promise<string> {
+  const boundary = `boundary_${Date.now()}`;
+  const metadata = JSON.stringify({ file: { display_name: "dance-video" } });
+
+  // Build multipart body
+  const metaPart = `--${boundary}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n${metadata}\r\n`;
+  const filePart = `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
+  const closing = `\r\n--${boundary}--`;
+
+  const metaBuf = Buffer.from(metaPart);
+  const filePartBuf = Buffer.from(filePart);
+  const closingBuf = Buffer.from(closing);
+  const body = Buffer.concat([metaBuf, filePartBuf, buffer, closingBuf]);
+
+  // Step 1: initiate resumable upload
+  const initRes = await fetch(
+    `${FILES_API_BASE}/upload/v1beta/files?key=${GEMINI_API_KEY}&uploadType=resumable`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(buffer.length),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: "dance-video" } }),
+    },
+  );
+
+  if (!initRes.ok) {
+    throw new Error(`Files API init failed (${initRes.status}): ${await initRes.text()}`);
+  }
+
+  const uploadUrl = initRes.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("Files API did not return upload URL");
+
+  // Step 2: upload the actual bytes
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+      "Content-Length": String(buffer.length),
+      "Content-Type": mimeType,
+    },
+    body: buffer,
+  });
+
+  if (!uploadRes.ok) {
+    throw new Error(`Files API upload failed (${uploadRes.status}): ${await uploadRes.text()}`);
+  }
+
+  const uploadData = await uploadRes.json() as { file: { name: string; uri: string; state: string } };
+  let file = uploadData.file;
+
+  // Step 3: poll until ACTIVE
+  while (file.state === "PROCESSING") {
+    await new Promise((r) => setTimeout(r, 2000));
+    const pollRes = await fetch(
+      `${FILES_API_BASE}/v1beta/${file.name}?key=${GEMINI_API_KEY}`,
+    );
+    if (pollRes.ok) {
+      const pollData = await pollRes.json() as { name: string; uri: string; state: string };
+      file = { ...file, ...pollData };
+    }
+  }
+
+  if (file.state === "FAILED") throw new Error("Gemini file processing failed");
+
+  return file.uri;
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
   const { lessonId, stream: useStream } = body;
@@ -50,12 +129,10 @@ export async function POST(request: Request) {
     );
   }
 
-  // Non-streaming mode (backwards compatible)
   if (!useStream) {
     return handleAnalysis(lessonId);
   }
 
-  // Streaming mode — send SSE progress events
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
@@ -82,7 +159,6 @@ export async function POST(request: Request) {
 
         send("progress", { phase: "download_video", pct: 10, message: "Downloading video from storage..." });
 
-        // Generate fresh presigned URL (stored URL may be expired)
         let videoUrl = lesson[0].videoUrl;
         try {
           const urlObj = new URL(videoUrl);
@@ -91,6 +167,7 @@ export async function POST(request: Request) {
         } catch {
           // Use as-is if URL parsing fails
         }
+
         const videoResponse = await fetch(videoUrl);
         if (!videoResponse.ok) {
           send("error", { error: `Failed to fetch video (${videoResponse.status})` });
@@ -98,22 +175,26 @@ export async function POST(request: Request) {
           return;
         }
 
-        send("progress", { phase: "encode_video", pct: 25, message: "Preparing video for AI analysis..." });
+        send("progress", { phase: "encode_video", pct: 20, message: "Uploading video to AI service..." });
 
         const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-        const base64Video = videoBuffer.toString("base64");
+        const mimeType = videoResponse.headers.get("content-type") || "video/mp4";
+
+        let fileUri: string;
+        try {
+          fileUri = await uploadToGeminiFiles(videoBuffer, mimeType);
+        } catch (err) {
+          send("error", { error: err instanceof Error ? err.message : "File upload failed" });
+          controller.close();
+          return;
+        }
 
         send("progress", { phase: "ai_analyzing", pct: 35, message: "AI is analyzing dance movements..." });
 
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent([
           { text: ANALYSIS_PROMPT },
-          {
-            inlineData: {
-              mimeType: "video/mp4",
-              data: base64Video,
-            },
-          },
+          { fileData: { mimeType, fileUri } },
         ]);
 
         send("progress", { phase: "parse_results", pct: 80, message: "Parsing AI results..." });
@@ -135,17 +216,10 @@ export async function POST(request: Request) {
 
         send("progress", { phase: "save_results", pct: 90, message: "Saving analysis to database..." });
 
-        // Delete old steps (in case of re-analysis)
         await db.delete(steps).where(eq(steps.lessonId, lessonId));
-
         await db
           .update(lessons)
-          .set({
-            bpm: analysis.bpm,
-            beats: analysis.beats,
-            duration: analysis.duration,
-            analyzedAt: new Date(),
-          })
+          .set({ bpm: analysis.bpm, beats: analysis.beats, duration: analysis.duration, analyzedAt: new Date() })
           .where(eq(lessons.id, lessonId));
 
         for (const step of analysis.steps) {
@@ -181,7 +255,6 @@ export async function POST(request: Request) {
   });
 }
 
-/** Non-streaming analysis handler (backwards compatible for mobile/API) */
 async function handleAnalysis(lessonId: string) {
   const lesson = await db
     .select()
@@ -194,36 +267,31 @@ async function handleAnalysis(lessonId: string) {
   }
 
   try {
-    // Generate fresh presigned URL (stored URL may be expired)
     let videoUrl = lesson[0].videoUrl;
     try {
       const urlObj = new URL(videoUrl);
       const key = urlObj.pathname.startsWith("/") ? urlObj.pathname.slice(1) : urlObj.pathname;
       videoUrl = await getDownloadUrl(key);
     } catch {
-      // Use as-is if URL parsing fails
+      // Use as-is
     }
+
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
       return NextResponse.json(
-        { error: `Failed to fetch video from storage (${videoResponse.status})` },
+        { error: `Failed to fetch video (${videoResponse.status})` },
         { status: 500 },
       );
     }
 
     const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-    const base64Video = videoBuffer.toString("base64");
+    const mimeType = videoResponse.headers.get("content-type") || "video/mp4";
+    const fileUri = await uploadToGeminiFiles(videoBuffer, mimeType);
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const result = await model.generateContent([
       { text: ANALYSIS_PROMPT },
-      {
-        inlineData: {
-          mimeType: "video/mp4",
-          data: base64Video,
-        },
-      },
+      { fileData: { mimeType, fileUri } },
     ]);
 
     const responseText = result.response.text();
@@ -242,17 +310,10 @@ async function handleAnalysis(lessonId: string) {
       );
     }
 
-    // Delete old steps (in case of re-analysis)
     await db.delete(steps).where(eq(steps.lessonId, lessonId));
-
     await db
       .update(lessons)
-      .set({
-        bpm: analysis.bpm,
-        beats: analysis.beats,
-        duration: analysis.duration,
-        analyzedAt: new Date(),
-      })
+      .set({ bpm: analysis.bpm, beats: analysis.beats, duration: analysis.duration, analyzedAt: new Date() })
       .where(eq(lessons.id, lessonId));
 
     for (const step of analysis.steps) {
@@ -271,7 +332,9 @@ async function handleAnalysis(lessonId: string) {
     return NextResponse.json({ success: true, lesson: analysis });
   } catch (err) {
     console.error("Analysis error:", err);
-    const message = err instanceof Error ? err.message : "Analysis failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Analysis failed" },
+      { status: 500 },
+    );
   }
 }
