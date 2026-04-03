@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { PracticeMode } from "./practice-mode";
+import { db } from "@/lib/db";
+import { lessons, steps } from "@/lib/db/schema";
+import { eq, asc } from "drizzle-orm";
+import { getDownloadUrl } from "@/lib/storage";
 
 export default async function PracticePage({
   params,
@@ -8,6 +11,35 @@ export default async function PracticePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // Fetch lesson + steps server-side so PracticeMode can show reference video
+  const [lesson] = await db
+    .select()
+    .from(lessons)
+    .where(eq(lessons.id, id))
+    .limit(1);
+
+  const lessonSteps = lesson
+    ? await db
+        .select()
+        .from(steps)
+        .where(eq(steps.lessonId, id))
+        .orderBy(asc(steps.stepNumber))
+    : [];
+
+  // Generate a fresh presigned URL for the reference video
+  let videoUrl: string | null = lesson?.videoUrl ?? null;
+  if (videoUrl) {
+    try {
+      const urlObj = new URL(videoUrl);
+      const key = urlObj.pathname.startsWith("/")
+        ? urlObj.pathname.slice(1)
+        : urlObj.pathname;
+      videoUrl = await getDownloadUrl(key);
+    } catch {
+      // Use as-is
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -28,7 +60,16 @@ export default async function PracticePage({
         </div>
       </div>
 
-      <PracticeMode lessonId={id} />
+      <PracticeMode
+        lessonId={id}
+        referenceVideoUrl={videoUrl}
+        referenceSteps={lessonSteps.map((s) => ({
+          id: s.stepNumber,
+          name: s.name,
+          startTime: s.startTime,
+          endTime: s.endTime,
+        }))}
+      />
     </div>
   );
 }

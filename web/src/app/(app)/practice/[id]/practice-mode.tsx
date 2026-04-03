@@ -39,7 +39,20 @@ interface ScoreResult {
   steps: StepScore[];
 }
 
-export function PracticeMode({ lessonId }: { lessonId: string }) {
+interface ReferenceStep {
+  id: number;
+  name: string;
+  startTime: number;
+  endTime: number;
+}
+
+interface Props {
+  lessonId: string;
+  referenceVideoUrl: string | null;
+  referenceSteps: ReferenceStep[];
+}
+
+export function PracticeMode({ lessonId, referenceVideoUrl, referenceSteps }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -48,6 +61,7 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
   const recordingStartRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadUrlRef = useRef<string | null>(null);
+  const refVideoRef = useRef<HTMLVideoElement>(null);
 
   const [state, setState] = useState<PracticeState>("loading");
   const [inputMode, setInputMode] = useState<InputMode>("record");
@@ -58,8 +72,9 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
   const [frameCount, setFrameCount] = useState(0);
   const [recordingTime, setRecordingTime] = useState(0);
   const [uploadFileName, setUploadFileName] = useState<string | null>(null);
+  // Side-by-side: which step's reference clip is being viewed
+  const [activeRefStep, setActiveRefStep] = useState<number>(0);
 
-  // Initialize MediaPipe on mount
   useEffect(() => {
     initPoseLandmarker()
       .then(() => setState("idle"))
@@ -69,12 +84,9 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
       });
   }, []);
 
-  // Cleanup object URLs on unmount
   useEffect(() => {
     return () => {
-      if (uploadUrlRef.current) {
-        URL.revokeObjectURL(uploadUrlRef.current);
-      }
+      if (uploadUrlRef.current) URL.revokeObjectURL(uploadUrlRef.current);
     };
   }, []);
 
@@ -91,9 +103,7 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
       }
       setCameraError(null);
     } catch {
-      setCameraError(
-        "Camera access denied. Please allow camera access to practice."
-      );
+      setCameraError("Camera access denied. Please allow camera access to practice.");
     }
   }, []);
 
@@ -111,7 +121,6 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
     };
   }, [stopCamera]);
 
-  // Pose detection loop — runs during recording or processing
   const poseLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -131,7 +140,6 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
 
     if (result && ctx) {
       drawPose(ctx, result, canvas.width, canvas.height);
-
       const elapsed = (now - recordingStartRef.current) / 1000;
       const lastFrameTime =
         framesRef.current.length > 0
@@ -144,7 +152,6 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
           setFrameCount(framesRef.current.length);
         }
       }
-
       setRecordingTime(elapsed);
     }
 
@@ -153,45 +160,33 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
 
   const submitFrames = async (capturedFrames: PoseFrame[]) => {
     if (capturedFrames.length < 5) {
-      setAnalyzeError(
-        "Not enough pose data captured. Make sure your full body is visible and try again."
-      );
+      setAnalyzeError("Not enough pose data captured. Make sure your full body is visible and try again.");
       setState("idle");
       return;
     }
-
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lessonId, userKeyframes: capturedFrames }),
       });
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Scoring failed (${res.status})`);
       }
-
       const result = await res.json();
-      setScore({
-        overallScore: result.overallScore,
-        steps: result.stepScores || [],
-      });
+      setScore({ overallScore: result.overallScore, steps: result.stepScores || [] });
       setState("results");
     } catch (err) {
-      setAnalyzeError(
-        err instanceof Error ? err.message : "Failed to analyze performance"
-      );
+      setAnalyzeError(err instanceof Error ? err.message : "Failed to analyze performance");
       setState("idle");
     }
   };
 
-  // --- Record flow ---
   const startRecording = async () => {
     await startCamera();
     setState("countdown");
     setCountdown(3);
-
     let count = 3;
     const interval = setInterval(() => {
       count--;
@@ -209,42 +204,24 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
   };
 
   const stopRecording = async () => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
     setState("analyzing");
     setAnalyzeError(null);
     stopCamera();
-
     const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      ctx?.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
+    if (canvas) { const ctx = canvas.getContext("2d"); ctx?.clearRect(0, 0, canvas.width, canvas.height); }
     await submitFrames(framesRef.current);
   };
 
-  // --- Upload flow ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (uploadUrlRef.current) {
-      URL.revokeObjectURL(uploadUrlRef.current);
-    }
+    if (uploadUrlRef.current) URL.revokeObjectURL(uploadUrlRef.current);
     const url = URL.createObjectURL(file);
     uploadUrlRef.current = url;
     setUploadFileName(file.name);
-
     const video = videoRef.current;
-    if (video) {
-      video.srcObject = null;
-      video.src = url;
-      video.load();
-    }
-
+    if (video) { video.srcObject = null; video.src = url; video.load(); }
     setState("upload_preview");
     setAnalyzeError(null);
   };
@@ -252,32 +229,20 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
   const processUploadedVideo = async () => {
     const video = videoRef.current;
     if (!video || !uploadUrlRef.current) return;
-
     framesRef.current = [];
     recordingStartRef.current = performance.now();
     setFrameCount(0);
     setRecordingTime(0);
     setState("processing");
-
-    // When video ends, stop loop and submit
     const onEnded = async () => {
       video.removeEventListener("ended", onEnded);
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = 0;
-      }
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
       setState("analyzing");
       setAnalyzeError(null);
-
       const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        ctx?.clearRect(0, 0, canvas.width, canvas.height);
-      }
-
+      if (canvas) { const ctx = canvas.getContext("2d"); ctx?.clearRect(0, 0, canvas.width, canvas.height); }
       await submitFrames(framesRef.current);
     };
-
     video.addEventListener("ended", onEnded);
     video.currentTime = 0;
     await video.play();
@@ -289,24 +254,35 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
     setScore(null);
     setAnalyzeError(null);
     setUploadFileName(null);
+    setActiveRefStep(0);
     stopCamera();
-
     const video = videoRef.current;
-    if (video) {
-      video.pause();
-      video.src = "";
-      video.srcObject = null;
-    }
-
-    if (uploadUrlRef.current) {
-      URL.revokeObjectURL(uploadUrlRef.current);
-      uploadUrlRef.current = null;
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (video) { video.pause(); video.src = ""; video.srcObject = null; }
+    if (uploadUrlRef.current) { URL.revokeObjectURL(uploadUrlRef.current); uploadUrlRef.current = null; }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  // Seek reference video when active step changes (results view)
+  useEffect(() => {
+    if (state !== "results" || !referenceVideoUrl || referenceSteps.length === 0) return;
+    const refVideo = refVideoRef.current;
+    if (!refVideo) return;
+    const step = referenceSteps[activeRefStep];
+    if (!step) return;
+    refVideo.pause();
+    refVideo.currentTime = step.startTime;
+  }, [activeRefStep, state, referenceVideoUrl, referenceSteps]);
+
+  // Loop reference clip within step boundaries
+  const handleRefTimeUpdate = useCallback(() => {
+    const refVideo = refVideoRef.current;
+    if (!refVideo || referenceSteps.length === 0) return;
+    const step = referenceSteps[activeRefStep];
+    if (!step) return;
+    if (refVideo.currentTime >= step.endTime) {
+      refVideo.currentTime = step.startTime;
+    }
+  }, [activeRefStep, referenceSteps]);
 
   const scoreColor = (s: number) =>
     s >= 80
@@ -323,14 +299,7 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/*"
-        className="hidden"
-        onChange={handleFileChange}
-      />
+      <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
 
       {/* Camera / Video View */}
       <Card className="overflow-hidden">
@@ -348,7 +317,6 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
                 </>
               ) : (
                 <>
-                  {/* Mode selector */}
                   <p className="text-sm font-medium text-muted-foreground">Choose how to practice</p>
                   <div className="grid w-full max-w-xs gap-3">
                     <button
@@ -390,12 +358,23 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
                       </div>
                     </button>
                   </div>
+
+                  {/* Music tip — shown only in record mode */}
+                  {inputMode === "record" && (
+                    <div className="flex w-full max-w-xs items-start gap-2.5 rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5">
+                      <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Start your music in <strong className="text-foreground">Spotify</strong> or <strong className="text-foreground">YouTube</strong> first, then hit Record.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           ) : null}
 
-          {/* Video element — shown during recording, processing, and upload preview */}
           <video
             ref={videoRef}
             autoPlay
@@ -410,14 +389,12 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
             style={inputMode === "record" ? { transform: "scaleX(-1)" } : undefined}
           />
 
-          {/* Countdown overlay */}
           {state === "countdown" && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <span className="font-heading text-8xl font-bold text-white">{countdown}</span>
             </div>
           )}
 
-          {/* Recording indicator */}
           {state === "recording" && (
             <>
               <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-red-500/90 px-3 py-1">
@@ -431,7 +408,6 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
             </>
           )}
 
-          {/* Processing indicator (uploaded video) */}
           {state === "processing" && (
             <>
               <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-primary/90 px-3 py-1">
@@ -445,14 +421,12 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
             </>
           )}
 
-          {/* Upload preview — file selected, show filename overlay */}
           {state === "upload_preview" && uploadFileName && (
             <div className="absolute bottom-3 left-3 right-3 rounded-lg bg-black/60 px-3 py-2">
               <p className="truncate text-xs text-white/80">{uploadFileName}</p>
             </div>
           )}
 
-          {/* Analyzing overlay */}
           {state === "analyzing" && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60">
               <div className="text-center">
@@ -475,67 +449,42 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
               </Button>
             )}
             {state === "idle" && inputMode === "upload" && (
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                variant="outline"
-                className="w-full max-w-xs"
-              >
+              <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="w-full max-w-xs">
                 <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 Choose Video File
               </Button>
             )}
-            {state === "loading" && (
-              <Button className="w-full max-w-xs" disabled>
-                Loading...
-              </Button>
-            )}
+            {state === "loading" && <Button className="w-full max-w-xs" disabled>Loading...</Button>}
             {state === "upload_preview" && (
               <div className="flex w-full max-w-xs gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1"
-                >
-                  Change
-                </Button>
-                <Button onClick={processUploadedVideo} className="flex-1">
-                  Analyze
-                </Button>
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1">Change</Button>
+                <Button onClick={processUploadedVideo} className="flex-1">Analyze</Button>
               </div>
             )}
             {state === "recording" && (
-              <Button
-                onClick={stopRecording}
-                variant="destructive"
-                className="w-full max-w-xs"
-              >
-                Stop Recording
-              </Button>
+              <Button onClick={stopRecording} variant="destructive" className="w-full max-w-xs">Stop Recording</Button>
             )}
             {state === "results" && (
-              <Button onClick={reset} variant="outline" className="w-full max-w-xs">
-                Try Again
-              </Button>
+              <Button onClick={reset} variant="outline" className="w-full max-w-xs">Try Again</Button>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Feedback Panel */}
+      {/* Feedback / Results Panel */}
       <div>
         {state === "results" && score ? (
           <div className="space-y-4">
+            {/* Overall score */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Overall Score</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-end gap-3">
-                  <span className="font-heading text-5xl font-bold">
-                    {Math.round(score.overallScore)}
-                  </span>
+                  <span className="font-heading text-5xl font-bold">{Math.round(score.overallScore)}</span>
                   <span className="mb-1 text-lg text-muted-foreground">/ 100</span>
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
@@ -547,6 +496,110 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
               </CardContent>
             </Card>
 
+            {/* Side-by-side comparison — shown when reference video is available */}
+            {referenceVideoUrl && referenceSteps.length > 0 && score.steps.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Side-by-Side Comparison</CardTitle>
+                  <p className="text-xs text-muted-foreground">Compare your attempt against the reference move</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Step selector */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {score.steps.map((s, i) => (
+                      <button
+                        key={s.stepNumber}
+                        onClick={() => setActiveRefStep(i)}
+                        className={`flex-shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          i === activeRefStep
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border bg-card text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                        }`}
+                      >
+                        Step {s.stepNumber}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Video pair */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Reference */}
+                    <div className="space-y-1">
+                      <p className="text-center text-xs font-medium text-muted-foreground">Reference</p>
+                      <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+                        <video
+                          ref={refVideoRef}
+                          src={referenceVideoUrl}
+                          preload="auto"
+                          playsInline
+                          onTimeUpdate={handleRefTimeUpdate}
+                          className="h-full w-full object-contain"
+                        />
+                        <button
+                          onClick={() => {
+                            const v = refVideoRef.current;
+                            if (!v) return;
+                            v.paused ? v.play() : v.pause();
+                          }}
+                          className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/20"
+                        >
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50">
+                            <svg className="ml-0.5 h-3.5 w-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
+                        </button>
+                      </div>
+                      <p className="text-center text-xs text-muted-foreground">
+                        {referenceSteps[activeRefStep]?.name}
+                      </p>
+                    </div>
+
+                    {/* Score summary for this step */}
+                    <div className="space-y-1">
+                      <p className="text-center text-xs font-medium text-muted-foreground">Your Score</p>
+                      <div className="flex aspect-video flex-col items-center justify-center rounded-lg border border-border bg-card gap-2 p-3">
+                        {(() => {
+                          const s = score.steps[activeRefStep];
+                          if (!s) return null;
+                          return (
+                            <>
+                              <span className={`inline-flex rounded-full border px-3 py-1 text-2xl font-bold ${scoreColor(s.score)}`}>
+                                {Math.round(s.score)}
+                              </span>
+                              <div className="text-center space-y-0.5">
+                                <p className="text-xs text-muted-foreground">Form: <strong>{Math.round(s.formScore)}</strong>  ·  Timing: <strong>{Math.round(s.timingScore)}</strong></p>
+                                {s.problemJoints.length > 0 && (
+                                  <div className="flex flex-wrap justify-center gap-1 mt-1">
+                                    {s.problemJoints.slice(0, 3).map((j) => (
+                                      <span key={j} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400">
+                                        {j.replaceAll("_", " ")}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <p className="text-center text-xs text-muted-foreground">
+                        Step {score.steps[activeRefStep]?.stepNumber}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Feedback for this step */}
+                  {score.steps[activeRefStep]?.feedback && (
+                    <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-3">
+                      {score.steps[activeRefStep].feedback}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Per-step score list */}
             {score.steps.map((stepScore) => (
               <Card key={stepScore.stepNumber}>
                 <CardHeader className="pb-2">
@@ -591,15 +644,15 @@ export function PracticeMode({ lessonId }: { lessonId: string }) {
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">2</span>
-                    AI tracks your body with 33 pose landmarks
+                    Start your music in Spotify or YouTube, then hit Record
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">3</span>
-                    Perform the dance moves from the lesson
+                    AI tracks your body with 33 pose landmarks
                   </li>
                   <li className="flex gap-3">
                     <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">4</span>
-                    AI scores your form per step with specific feedback
+                    Compare your moves side-by-side with the reference video
                   </li>
                 </ol>
               </div>
